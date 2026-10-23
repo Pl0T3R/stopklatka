@@ -6,7 +6,7 @@ Robisz to raz. Potem Claude Code na Twoim komputerze sam buduje grę i wgrywa j�
 
 1. Wejdź na <https://developers.meta.com/horizon/> i zaloguj się swoim kontem Meta.
 2. Utwórz **organizację**. Nazwa może być dowolna, na przykład Twój nick.
-3. Zweryfikuj konto w panelu dewelopera (Developer Dashboard → Verification). Meta zwykle prosi o numer telefonu albo kartę. Tryb dewelopera wymaga też, żebyś miał co najmniej 18 lat.
+3. Zweryfikuj konto w panelu dewelopera (Developer Dashboard → Verification). Meta zwykle prosi o numer telefonu albo kartę. Tryb dewelopera wymaga też ukończonych 18 lat.
 
 ## 2. Gogle: parowanie i tryb dewelopera
 
@@ -55,11 +55,32 @@ Claude:
 
 Pierwsze otwarcie Unity trwa 5–10 minut.
 
-## 5. Skan szkoły (Space Setup)
+## 5. Skan miejsca gry (Space Setup)
 
-1. W goglach: **Ustawienia → Przestrzeń fizyczna → Space Setup**.
-2. Zeskanuj korytarz i sale, po których chcesz chodzić. Każde pomieszczenie skanuj osobno, ale w tej samej przestrzeni.
-3. Sprawdź, czy ławki i stoły są oznaczone jako stoły. Wtedy przeciwnicy je omijają, a broń może na nich leżeć.
+W goglach: **Ustawienia → Przestrzeń fizyczna → Space Setup**.
+
+**Szkoła**
+1. Zeskanuj korytarz i sale, po których chcesz chodzić. Każde pomieszczenie skanuj osobno, ale w tej samej przestrzeni.
+2. Sprawdź, czy ławki i stoły są oznaczone jako stoły. Wtedy przeciwnicy je omijają, a broń może na nich leżeć.
+
+**Dom**
+1. Zeskanuj każdy pokój, w którym chcesz grać, w tej samej przestrzeni (razem z przedpokojem, jeśli łączy pokoje).
+2. Sprawdź, czy **drzwi** są zaznaczone w skanie. Przez drzwi lecą pociski, a przeciwnicy wchodzą nimi z innych pokoi. Bez drzwi ściana jest pełna.
+3. Inne piętro skanuj, stojąc na nim. Przeciwnicy pojawiają się tylko na piętrze, na którym jesteś.
+4. Schody nie są pokojem, więc kiedy na nie wejdziesz, gra się zatrzyma. To celowe: po schodach chodzisz w zwykłym obrazie z kamer.
+5. Kanapa, łóżko i szafy oznaczone w skanie są przeszkodami. Przeciwnicy je omijają, a pociski się na nich zatrzymują.
+
+## Menu gry
+
+Menu to trzy kryształy, które strzelasz albo dotykasz kontrolerem:
+
+| Kryształ | Co robi |
+| --- | --- |
+| **START** (środek) | Zaczyna grę |
+| **STYL** (po lewej) | Wygląd prawdziwego świata: **NORMALNY** (zwykły obraz), **BIAŁY** (wyblakły, domyślny), **SUPERHOT** (białe ściany i szare cienie, czerwień zostaje tylko na przeciwnikach) |
+| **TRYB** (po prawej) | **SZKOŁA** albo **DOM**. W domu przeciwnicy pojawiają się bliżej (od 1,8 m), jest ich naraz mniej, a ich pociski lecą wolniej, bo pokoje są małe |
+
+Gra pamięta wybrany styl i tryb. Na pierwszy start jest SZKOŁA i styl BIAŁY.
 
 ## Bezpieczeństwo
 
@@ -67,6 +88,8 @@ Pierwsze otwarcie Unity trwa 5–10 minut.
 - Gra nie wymaga biegania. Czas płynie tylko wtedy, kiedy się ruszasz, więc wolne, spokojne ruchy wystarczą.
 - Kiedy wyjdziesz poza zeskanowany obszar, gra sama się zatrzymuje i pokazuje zwykły obraz z kamer.
 - Ludzie i przeszkody, które są bliżej Ciebie, zasłaniają przeciwników, więc ich widzisz.
+- W stylu **SUPERHOT** prawdziwe przedmioty są mniej widoczne (wszystko robi się białe). Jeśli grasz w ciasnym pokoju albo między meblami, wybierz NORMALNY albo BIAŁY.
+- W domu uważaj na zwierzęta, porozrzucane rzeczy i progi, bo gogle ich nie zasłaniają. Zrób miejsce przed grą.
 
 ## Sterowanie
 
@@ -79,4 +102,4 @@ Pierwsze otwarcie Unity trwa 5–10 minut.
 | Menu / wróć do startu | Przycisk **☰** na lewym kontrolerze |
 | Licznik klatek i rozdzielczości | Wciśnij lewą gałkę |
 
-Start gry: weź pistolet, który unosi się obok Ciebie, i strzel w czerwony kryształ **START**. Możesz go też dotknąć kontrolerem. Biały kryształ **STYL** przełącza wygląd szkoły: wyblakły „biały” albo normalny.
+Start gry: weź pistolet, który unosi się obok Ciebie, i strzel w czerwony kryształ **START**. Możesz go też dotknąć kontrolerem. Kryształy **STYL** i **TRYB** opisuje sekcja „Menu gry”.

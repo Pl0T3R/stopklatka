@@ -36,11 +36,11 @@ namespace Stopklatka
     /// <summary>Pooled shards for shattering enemies, bottles and bullet impacts.</summary>
     public static class ShardSystem
     {
-        const int MaxShards = 260;
+        const int MaxShards = 320;
         static Pool<Shard> _pool;
         static Mesh[] _meshes;
 
-        static Pool<Shard> PoolInstance => _pool ??= new Pool<Shard>("Shards", Create, 120);
+        static Pool<Shard> PoolInstance => _pool ??= new Pool<Shard>("Shards", Create, 160);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() { _pool = null; }
@@ -55,9 +55,13 @@ namespace Stopklatka
             }
         }
 
-        /// <summary>Breaks a figure apart: shards fill each body part's bounds and fly along the hit.</summary>
-        public static void Shatter(Renderer[] parts, Material mat, Vector3 hitPoint, Vector3 hitDir, int perPart)
+        /// <summary>
+        /// Breaks a figure apart: shards fill each body part's bounds and fly along the hit.
+        /// Mixes two materials (a light and a dark red) so the debris reads as broken crystal.
+        /// </summary>
+        public static void Shatter(Renderer[] parts, Material mat, Material darkMat, Vector3 hitPoint, Vector3 hitDir, int perPart)
         {
+            int n = 0;
             foreach (var r in parts)
             {
                 if (r == null) continue;
@@ -67,7 +71,9 @@ namespace Stopklatka
                     var p = new Vector3(Random.Range(b.min.x, b.max.x), Random.Range(b.min.y, b.max.y), Random.Range(b.min.z, b.max.z));
                     float near = 1f / (1f + (p - hitPoint).sqrMagnitude * 6f);
                     var v = hitDir * Random.Range(0.6f, 2.4f) * (0.4f + near) + (p - b.center).normalized * Random.Range(0.4f, 1.4f) + Vector3.up * 0.6f;
-                    Spawn(mat, p, v, Random.Range(0.035f, 0.075f));
+                    // pieces near the hit are smaller and faster
+                    float size = Mathf.Lerp(Random.Range(0.04f, 0.08f), Random.Range(0.02f, 0.04f), near);
+                    Spawn(n++ % 3 == 0 ? darkMat : mat, p, v, size);
                 }
             }
         }

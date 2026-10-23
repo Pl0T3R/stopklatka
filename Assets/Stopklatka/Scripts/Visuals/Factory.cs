@@ -24,7 +24,7 @@ namespace Stopklatka
             capsule.height = 1.72f;
             capsule.radius = 0.2f;
             var head = root.AddComponent<SphereCollider>();
-            head.center = new Vector3(0f, 1.63f, 0f);
+            head.center = new Vector3(0f, 1.65f, 0.01f);
             head.radius = 0.13f;
             var rb = root.AddComponent<Rigidbody>();
             rb.isKinematic = true;
@@ -42,7 +42,7 @@ namespace Stopklatka
             agent.updateRotation = false;
             agent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
 
-            var body = EnemyBody.Build(root.transform, Mats.Get(Mats.Enemy));
+            var body = EnemyBody.Build(root.transform, Mats.Get(Mats.Enemy), Mats.Get(Mats.FloorShadow));
             foreach (var t in root.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = Layers.Enemy;
 
             Gun weapon = gun.HasValue ? CreateGun(gun.Value, position, rotation) : null;

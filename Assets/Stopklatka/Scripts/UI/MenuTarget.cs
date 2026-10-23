@@ -11,7 +11,7 @@ namespace Stopklatka
     {
         public Action OnActivated;
         public Renderer Visual;
-        TextMesh _label;
+        TextMesh _label, _labelShadow;
         Vector3 _base;
         bool _done;
 
@@ -24,20 +24,38 @@ namespace Stopklatka
             go.transform.SetParent(transform, false);
             go.transform.localPosition = new Vector3(0f, 0.24f, 0f);
             go.transform.localScale = Vector3.one * 0.0028f;
-            _label = go.AddComponent<TextMesh>();
-            _label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _label.fontSize = 120;
-            _label.anchor = TextAnchor.LowerCenter;
-            _label.alignment = TextAlignment.Center;
-            _label.color = Color.white;
-            _label.text = label;
-            // shares the HUD material, which follows font texture rebuilds
-            go.GetComponent<MeshRenderer>().sharedMaterial = Hud.Instance != null
-                ? Hud.Instance.TextMaterial
-                : new Material(Mats.Get(Mats.Text)) { mainTexture = _label.font.material.mainTexture };
+            _label = MakeText(go, label, Color.white, 1);
+            // dark drop shadow behind the label, readable over a white room
+            var shadow = new GameObject("Label Shadow");
+            shadow.transform.SetParent(go.transform, false);
+            shadow.transform.localPosition = new Vector3(0.8f, -0.8f, 1f);
+            _labelShadow = MakeText(shadow, label, new Color(0.04f, 0.04f, 0.06f, 0.6f), 0);
         }
 
-        public void SetLabel(string text) => _label.text = text;
+        static TextMesh MakeText(GameObject go, string text, Color color, int order)
+        {
+            var tm = go.AddComponent<TextMesh>();
+            tm.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            tm.fontSize = 120;
+            tm.fontStyle = FontStyle.Bold;
+            tm.anchor = TextAnchor.LowerCenter;
+            tm.alignment = TextAlignment.Center;
+            tm.color = color;
+            tm.text = text;
+            var r = go.GetComponent<MeshRenderer>();
+            r.sortingOrder = order;
+            // shares the HUD material, which follows font texture rebuilds
+            r.sharedMaterial = Hud.Instance != null
+                ? Hud.Instance.TextMaterial
+                : new Material(Mats.Get(Mats.Text)) { mainTexture = tm.font.material.mainTexture };
+            return tm;
+        }
+
+        public void SetLabel(string text)
+        {
+            _label.text = text;
+            _labelShadow.text = text;
+        }
 
         void Update()
         {

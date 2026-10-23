@@ -1,6 +1,9 @@
 # Stopklatka
 
-Gra mixed reality w stylu Superhot na Meta Quest 3. Chodzisz po prawdziwej szkole zeskanowanej w Space Setup, a czerwone kryształowe postacie pojawiają się w zeskanowanych salach i korytarzu. Czas płynie tylko wtedy, kiedy się ruszasz.
+Gra mixed reality w stylu Superhot na Meta Quest 3. Chodzisz po prawdziwej szkole albo domu zeskanowanym w Space Setup, a czerwone kryształowe postacie pojawiają się w zeskanowanych pomieszczeniach. Czas płynie tylko wtedy, kiedy się ruszasz.
+
+- **Tryby:** SZKOŁA (duże sale i korytarz) i DOM (cały dom, kilka pokoi, także piętra). Wybierasz w menu.
+- **Wygląd:** biały świat, czerwoni przeciwnicy, czarna broń. Styl obrazu z kamer do wyboru w menu: NORMALNY, BIAŁY albo SUPERHOT.
 
 - **Sterowanie:** kontrolery Touch. Grip chwyta, spust strzela, puszczenie gripu rzuca.
 - **Bronie:** pistolet (4 naboje), strzelba (2 strzały po 6 śrutów), katana (tnie przeciwników i pociski), butelki do rzucania.

@@ -52,18 +52,33 @@ namespace Stopklatka
             var result = await mruk.LoadSceneFromDevice(requestSceneCaptureIfNoDataFound: true);
             HasScan = mruk.Rooms.Count > 0;
             Debug.Log($"[Stopklatka] Scene load: {result}, rooms: {mruk.Rooms.Count}");
-            if (!HasScan) Problem = "Nie znaleziono skanu. Zrób Space Setup w szkole (Ustawienia > Przestrzeń fizyczna).";
+            if (!HasScan) Problem = "Nie znaleziono skanu. Zrób Space Setup tam, gdzie grasz (Ustawienia > Przestrzeń fizyczna).";
 
             if (HasScan)
             {
-                var room = mruk.GetCurrentRoom() ?? mruk.Rooms[0];
-                if (room.FloorAnchor != null) PlayerRig.Instance.FloorY = room.FloorAnchor.transform.position.y;
+                UpdateFloor(mruk.GetCurrentRoom() ?? mruk.Rooms[0]);
 
                 float until = Time.realtimeSinceStartup + 6f;
                 while (!NavReady && Time.realtimeSinceStartup < until) await Task.Yield();
                 if (!NavReady) Debug.LogWarning("[Stopklatka] NavMesh not ready, enemies will walk in straight lines.");
             }
             Ready = true;
+        }
+
+        static readonly int FloorYId = Shader.PropertyToID("_StopklatkaFloorY");
+
+        void Update()
+        {
+            // Houses have floors: follow the floor height of the room you are in.
+            if (HasScan && MRUK.Instance != null) UpdateFloor(MRUK.Instance.GetCurrentRoom());
+        }
+
+        void UpdateFloor(MRUKRoom room)
+        {
+            if (room == null || room.FloorAnchor == null || PlayerRig.Instance == null) return;
+            float y = room.FloorAnchor.transform.position.y;
+            PlayerRig.Instance.FloorY = y;
+            Shader.SetGlobalFloat(FloorYId, y);
         }
 
         void OnNavMeshReady()
@@ -113,6 +128,14 @@ namespace Stopklatka
         /// </summary>
         public bool TryFindEnemySpawn(Vector3 playerFloor, out Vector3 position)
         {
+            // second pass with a shorter minimum distance, for small rooms
+            float min = Tuning.EnemyMinSpawnDistance;
+            return TryFindEnemySpawn(playerFloor, min, out position) ||
+                   TryFindEnemySpawn(playerFloor, Mathf.Max(1.2f, min * 0.6f), out position);
+        }
+
+        bool TryFindEnemySpawn(Vector3 playerFloor, float minDistance, out Vector3 position)
+        {
             position = default;
             var filter = new NavMeshQueryFilter { agentTypeID = NavAgentTypeId, areaMask = NavMesh.AllAreas };
             NavMeshHit playerHit = default;
@@ -126,20 +149,21 @@ namespace Stopklatka
                 if (HasScan)
                 {
                     var rooms = MRUK.Instance.Rooms;
-                    var room = playerRoom != null && Random.value < 0.7f ? playerRoom : rooms[Random.Range(0, rooms.Count)];
+                    var room = playerRoom != null && Random.value < GameMode.Profile.PlayerRoomChance ? playerRoom : rooms[Random.Range(0, rooms.Count)];
                     if (!room.GenerateRandomPositionOnSurface(MRUK.SurfaceType.FACING_UP, 0.35f,
                             LabelFilter.Included(MRUKAnchor.SceneLabels.FLOOR), out candidate, out _))
                         continue;
                     if (room.IsPositionInSceneVolume(candidate + Vector3.up * 0.4f, 0.25f)) continue;
+                    if (Mathf.Abs(candidate.y - playerFloor.y) > 0.6f) continue;   // stay on the player's floor
                 }
                 else
                 {
                     var dir = Random.insideUnitCircle.normalized;
-                    candidate = playerFloor + new Vector3(dir.x, 0f, dir.y) * Random.Range(Tuning.EnemyMinSpawnDistance, 5f);
+                    candidate = playerFloor + new Vector3(dir.x, 0f, dir.y) * Random.Range(minDistance, Mathf.Max(minDistance + 0.5f, 5f));
                 }
 
                 float d = Vector3.Distance(new Vector3(candidate.x, 0f, candidate.z), new Vector3(playerFloor.x, 0f, playerFloor.z));
-                if (d < Tuning.EnemyMinSpawnDistance || d > Tuning.EnemyMaxSpawnDistance) continue;
+                if (d < minDistance || d > Tuning.EnemyMaxSpawnDistance) continue;
 
                 if (NavReady)
                 {

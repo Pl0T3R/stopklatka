@@ -18,7 +18,7 @@ namespace Stopklatka
 
         Transform _streak;
         MeshRenderer _streakRenderer;
-        float _age, _traveled, _streakMax;
+        float _age, _traveled, _streakMax, _streakWidth;
 
         public void Setup(Transform streak, MeshRenderer streakRenderer)
         {
@@ -33,10 +33,12 @@ namespace Stopklatka
             Shooter = shooter;
             _age = 0f;
             _traveled = 0f;
-            _streakMax = owner == BulletOwner.Enemy ? 0.9f : 0.5f;
+            // enemy shots get a long red trail so you can read where they go in slow motion
+            _streakMax = owner == BulletOwner.Enemy ? 1.6f : 0.8f;
+            _streakWidth = owner == BulletOwner.Enemy ? 1.3f : 1f;
             _streakRenderer.sharedMaterial = Mats.Get(owner == BulletOwner.Enemy ? Mats.EnemyTrail : Mats.PlayerTrail);
             transform.rotation = Quaternion.LookRotation(velocity);
-            _streak.localScale = new Vector3(1f, 1f, 0.001f);
+            _streak.localScale = new Vector3(_streakWidth, _streakWidth, 0.001f);
         }
 
         void Update()
@@ -61,7 +63,7 @@ namespace Stopklatka
 
             transform.position = pos + step;
             _traveled += dist;
-            _streak.localScale = new Vector3(1f, 1f, Mathf.Min(_traveled, _streakMax));
+            _streak.localScale = new Vector3(_streakWidth, _streakWidth, Mathf.Min(_traveled, _streakMax));
         }
 
         /// <returns>true if the bullet stopped.</returns>

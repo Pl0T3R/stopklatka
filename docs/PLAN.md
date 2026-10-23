@@ -157,3 +157,40 @@ Ograniczenie: tutaj nie skompiluję Unity, bo nie ma tu edytora ani licencji. Pi
 - Każde użyte API Meta i MRUK sprawdzone w kodzie paczek `com.meta.xr.sdk.core` i `com.meta.xr.mrutilitykit` w wersji 207.0.1, pobranych z `npm.developer.oculus.com`.
 - Kompilacja testowa skryptów gry i buildera kompilatorem C# (Roslyn) z prawdziwymi bibliotekami Unity 6000.0.85f1. Typy paczek (Meta, MRUK, URP, AI Navigation) zastąpione zaślepkami o sygnaturach skopiowanych z kodu źródłowego tych paczek. Wynik opisany w historii commitów.
 - Nie sprawdzone tutaj: shadery (kompiluje je dopiero Unity) i zachowanie na goglach.
+
+## Etap A2: tryb DOM i grafika v2
+
+**Tryb DOM** (`Scripts/Core/GameMode.cs`), wybierany kryształem TRYB w menu i zapamiętywany w `PlayerPrefs`:
+
+| | SZKOŁA | DOM |
+| --- | --- | --- |
+| Odległość pojawiania się | 2,5–9 m | 1,8–7 m |
+| Przeciwników naraz | do 6 | do 4 |
+| Przeciwników w fali | 2 + fala (max 12) | 2 + ¾·fala (max 10) |
+| Dystans strzelców | 4 m | 3 m |
+| Prędkość chodu | 1,0 m/s | 0,9 m/s |
+| Pociski wrogów | 6,5 m/s | 5,5 m/s |
+| Czas reakcji | ×1,0 | ×1,15 |
+| Pojawianie się w Twoim pokoju | 70% | 50% |
+
+- **Drzwi:** `EffectMesh.CutHoles = DOOR_FRAME` wycina otwory w siatkach ścian, a kolizje ścian powstają z tych siatek. `Physics.queriesHitBackfaces = true`, żeby cienkie ściany zatrzymywały pociski z obu stron.
+- **Piętra:** wysokość podłogi co klatkę z bieżącego pokoju MRUK (`PlayerRig.FloorY` i globalny `_StopklatkaFloorY` dla shaderów). Przeciwnicy pojawiają się tylko na tym samym piętrze (różnica wysokości do 0,6 m i pełna ścieżka NavMesh).
+- **Małe pokoje:** jeśli 40 prób zawiedzie, druga runda szuka miejsca z mniejszą minimalną odległością (60%, nie mniej niż 1,2 m).
+
+**Grafika v2:**
+- `Crystal.shader`:
+  - dwa tony (`_ShadowColor`/`_BaseColor`),
+  - połysk Blinn-Phong,
+  - przyciemnienie przy podłodze,
+  - wariant `_REVEAL` do materializacji od podłogi.
+- `Transparent.shader`: kolor wierzchołków (zanikanie) i `_OcclusionBias` dla rzeczy na podłodze.
+- Efekty:
+  - smugi pocisków z gradientem,
+  - cień pod przeciwnikami,
+  - czerwony pierścień przy pojawianiu się,
+  - błysk i dwa odcienie czerwonych odłamków przy śmierci,
+  - czerwona winieta przy trafieniu.
+- Model przeciwnika: barki, łokcie i kolana jako kryształowe stawy, dłuższa szyja, głowa z wyraźną szczęką.
+- Napisy: pogrubione z ciemnym cieniem; „STOP.” i „KLATKA.” pulsują.
+- Styl obrazu z kamer w menu: NORMALNY, BIAŁY albo SUPERHOT (gradient jasności: ciemne → chłodny szary, jasne → biel).
+- Kompilacja testowa skryptów i buildera jak w Etapie A: 0 błędów, 0 ostrzeżeń. Shadery sprawdzi dopiero Unity (lista kontrolna w `CLAUDE.md`).

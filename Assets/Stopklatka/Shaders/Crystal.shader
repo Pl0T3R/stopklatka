@@ -1,17 +1,25 @@
-// Faceted, flat-lit "crystal" look for enemies, weapons and shards. No real-time lights needed:
-// a fixed light direction, an ambient floor and a fresnel rim. Supports Meta Depth API occlusion,
-// so real people, walls and furniture hide virtual objects behind them.
+// Superhot-style faceted material for enemies, weapons, bottles and shards.
+// Flat facets with a two-tone light/shadow split, a glossy highlight, a fresnel rim and a little
+// darkening near the floor. No real-time lights or shadows needed, so it stays cheap at 120 Hz.
+// Supports Meta Depth API occlusion (real people and furniture hide what's behind them).
+// The _REVEAL variant (enemy spawn-in) cuts the mesh above a height with a glowing edge.
 Shader "Stopklatka/Crystal"
 {
     Properties
     {
-        [MainColor] _BaseColor("Base Color", Color) = (0.86, 0.1, 0.08, 1)
-        _RimColor("Rim Color", Color) = (1, 0.6, 0.55, 1)
-        _RimPower("Rim Power", Range(0.5, 8)) = 2.5
-        _RimStrength("Rim Strength", Range(0, 2)) = 0.6
-        _Ambient("Ambient", Range(0, 1)) = 0.55
+        [MainColor] _BaseColor("Lit Color", Color) = (0.9, 0.12, 0.09, 1)
+        _ShadowColor("Shadow Color", Color) = (0.45, 0.03, 0.04, 1)
+        _RimColor("Rim Color", Color) = (1, 0.55, 0.5, 1)
+        _RimPower("Rim Power", Range(0.5, 8)) = 3
+        _RimStrength("Rim Strength", Range(0, 2)) = 0.7
+        _HighlightColor("Highlight Color", Color) = (1, 0.88, 0.84, 1)
+        _Gloss("Gloss", Range(4, 256)) = 48
+        _SpecStrength("Highlight Strength", Range(0, 2)) = 0.6
         _LightDir("Light Direction", Vector) = (0.35, 0.85, 0.4, 0)
         _Emission("Emission", Range(0, 1)) = 0
+        _FloorShade("Darkening Near Floor", Range(0, 1)) = 0.35
+        _RevealY("Reveal Height (world)", Float) = 1000
+        _RevealColor("Reveal Edge Color", Color) = (1, 0.85, 0.75, 1)
     }
 
     SubShader
@@ -35,19 +43,29 @@ Shader "Stopklatka/Crystal"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #pragma multi_compile _ HARD_OCCLUSION SOFT_OCCLUSION
+            #pragma shader_feature_local _REVEAL
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.meta.xr.sdk.core/Shaders/EnvironmentDepth/URP/EnvironmentOcclusionURP.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
                 half4 _BaseColor;
+                half4 _ShadowColor;
                 half4 _RimColor;
                 half _RimPower;
                 half _RimStrength;
-                half _Ambient;
+                half4 _HighlightColor;
+                half _Gloss;
+                half _SpecStrength;
                 float4 _LightDir;
                 half _Emission;
+                half _FloorShade;
+                float _RevealY;
+                half4 _RevealColor;
             CBUFFER_END
+
+            // Set by RoomService to the floor height of the room you're in.
+            float _StopklatkaFloorY;
 
             struct Attributes
             {
@@ -82,14 +100,33 @@ Shader "Stopklatka/Crystal"
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
-                half3 n = normalize(i.normalWS);
-                half3 l = normalize(_LightDir.xyz);
-                half3 viewDir = normalize(GetWorldSpaceViewDir(i.positionWS));
-                half diffuse = saturate(dot(n, l)) * (1.0h - _Ambient) + _Ambient;
-                half facet = 0.9h + 0.1h * n.y;
-                half rim = pow(1.0h - saturate(dot(n, viewDir)), _RimPower) * _RimStrength;
+            #if defined(_REVEAL)
+                float below = _RevealY - i.positionWS.y;
+                clip(below);
+            #endif
 
-                half3 color = _BaseColor.rgb * diffuse * facet + _RimColor.rgb * rim + _BaseColor.rgb * _Emission;
+                half3 n = normalize(i.normalWS);
+                half3 l = normalize((half3)_LightDir.xyz);
+                half3 viewDir = normalize((half3)GetWorldSpaceViewDir(i.positionWS));
+
+                // two-tone: a soft step between the shadow and the lit color makes every facet read
+                half wrap = saturate(dot(n, l) * 0.5h + 0.5h);
+                half lit = smoothstep(0.3h, 0.7h, wrap);
+                half3 color = lerp(_ShadowColor.rgb, _BaseColor.rgb, lit);
+
+                // a little darker near the floor: grounds objects in the real room
+                half height = (half)saturate((i.positionWS.y - _StopklatkaFloorY) / 0.6);
+                color *= lerp(1.0h - _FloorShade, 1.0h, height);
+
+                half3 h = normalize(l + viewDir);
+                half spec = pow(saturate(dot(n, h)), _Gloss) * _SpecStrength;
+                half rim = pow(1.0h - saturate(dot(n, viewDir)), _RimPower) * _RimStrength;
+                color += _HighlightColor.rgb * spec + _RimColor.rgb * rim + _BaseColor.rgb * _Emission;
+
+            #if defined(_REVEAL)
+                color += _RevealColor.rgb * (half)saturate(1.0 - below / 0.05) * 2.0h;
+            #endif
+
                 half4 result = half4(color, 1.0h);
                 META_DEPTH_OCCLUDE_OUTPUT_PREMULTIPLY_WORLDPOS(i.positionWS, result, 0);
                 return result;

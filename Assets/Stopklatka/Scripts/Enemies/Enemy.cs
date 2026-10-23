@@ -21,10 +21,13 @@ namespace Stopklatka
         EnemyBody _body;
         State _state;
         float _stateTime, _reaction, _nextFire, _repathAt, _reactionTime, _fireInterval;
-        bool _useAgent;
+        bool _useAgent, _revealing;
         Vector3 _lastPos, _velocity, _manualTarget;
+        Renderer[] _gunRenderers;
 
         const float EyeHeight = 1.6f;
+        const float AppearSeconds = 0.9f;
+        const float RevealHeight = 1.9f;
 
         public void Init(EnemyBody body, NavMeshAgent agent, Gun gun, int wave, int agentTypeId, bool navReady)
         {
@@ -38,6 +41,8 @@ namespace Stopklatka
             {
                 Gun = gun;
                 gun.AttachToEnemy(this, body.HandSocketR);
+                _gunRenderers = gun.GetComponentsInChildren<Renderer>();
+                SetGunVisible(false);
             }
 
             _useAgent = false;
@@ -59,6 +64,9 @@ namespace Stopklatka
             _state = State.Appearing;
             _stateTime = 0f;
             _body.Appear = 0f;
+            _body.BeginReveal(Mats.Get(Mats.EnemyReveal), transform.position.y - 0.02f);
+            _revealing = true;
+            Effects.SpawnRing(transform.position, AppearSeconds * 1.3f);
             Alive.Add(this);
             SoundBank.Instance?.Play(Sfx.Spawn, transform.position + Vector3.up, 0.8f);
         }
@@ -80,9 +88,10 @@ namespace Stopklatka
             switch (_state)
             {
                 case State.Appearing:
-                    _body.Appear = Mathf.Clamp01(_stateTime / 0.9f);
+                    _body.Appear = Mathf.Clamp01(_stateTime / AppearSeconds);
+                    UpdateReveal();
                     FaceToward(toPlayer, dt, 4f);
-                    if (_stateTime >= 0.9f) Enter(State.Moving);
+                    if (_stateTime >= AppearSeconds) { EndReveal(); Enter(State.Moving); }
                     break;
 
                 case State.Moving:
@@ -111,6 +120,29 @@ namespace Stopklatka
             _velocity = (transform.position - _lastPos) / dt;
             _lastPos = transform.position;
             _body.Animate(dt, _velocity);
+        }
+
+        void UpdateReveal()
+        {
+            // materializes from the feet up; the weapon pops in once the edge reaches the hand
+            float y = transform.position.y - 0.02f + Mathf.SmoothStep(0f, 1f, _body.Appear) * RevealHeight;
+            _body.SetReveal(y);
+            if (Gun != null && y > Gun.transform.position.y) SetGunVisible(true);
+        }
+
+        void EndReveal()
+        {
+            if (!_revealing) return;
+            _revealing = false;
+            _body.Appear = 1f;
+            _body.EndReveal(Mats.Get(Mats.Enemy));
+            SetGunVisible(true);
+        }
+
+        void SetGunVisible(bool visible)
+        {
+            if (_gunRenderers == null) return;
+            foreach (var r in _gunRenderers) if (r != null) r.enabled = visible;
         }
 
         void Enter(State s)
@@ -197,6 +229,8 @@ namespace Stopklatka
         void DropGun(Vector3 velocity)
         {
             if (Gun == null) return;
+            SetGunVisible(true);
+            _gunRenderers = null;
             Gun.DropFromEnemy(velocity);
             Gun = null;
         }
@@ -205,6 +239,7 @@ namespace Stopklatka
         public void Stun(Vector3 point)
         {
             if (_state == State.Dead) return;
+            EndReveal();   // hit while still forming: finish appearing at once
             DropGun(Vector3.up * 1.5f + Random.insideUnitSphere * 0.5f);
             _body.AimTarget = null;
             _body.Punch = 0f;
@@ -217,7 +252,8 @@ namespace Stopklatka
             if (_state == State.Dead) return;
             _state = State.Dead;
             DropGun(Vector3.up * 1.8f + direction * 0.6f);
-            ShardSystem.Shatter(_body.Parts, Mats.Get(Mats.Enemy), point, direction, 5);
+            Effects.KillFlash(point, direction);
+            ShardSystem.Shatter(_body.Parts, Mats.Get(Mats.Enemy), Mats.Get(Mats.EnemyDark), point, direction, 6);
             SoundBank.Instance?.Play(Sfx.Shatter, point, 1f, Random.Range(0.9f, 1.1f));
             Alive.Remove(this);
             GameManager.Instance?.EnemyKilled(this);

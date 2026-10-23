@@ -3,20 +3,48 @@ using UnityEngine;
 namespace Stopklatka
 {
     /// <summary>
-    /// Makes the real school look washed-out and bright (Superhot's white world) while enemies stay red.
-    /// Kept moderate for safety, switchable from the menu, and turned off whenever the game pauses.
-    /// Also asks the system to hide the boundary while passthrough is on, so you can walk the corridors.
+    /// How the real world looks through the cameras:
+    ///   NORMALNY - untouched,
+    ///   BIAŁY    - washed-out and bright (default),
+    ///   SUPERHOT - brightness mapped to white and cool greys, so only the enemies stay red.
+    /// Remembered between sessions. Always plain while paused or outside the scan, for safety.
+    /// Also asks the system to hide the boundary while passthrough is on, so you can walk between rooms.
     /// </summary>
     public class PassthroughStyle : MonoBehaviour
     {
+        public enum Style { Normal, White, Superhot }
+
         public static PassthroughStyle Instance { get; private set; }
 
-        public bool Stylized { get; private set; } = true;
+        public Style Current { get; private set; } = Style.White;
+
+        public string Label => Current switch
+        {
+            Style.Normal => "NORMALNY",
+            Style.Superhot => "SUPERHOT",
+            _ => "BIAŁY",
+        };
+
+        const string Key = "stopklatka.style";
 
         OVRPassthroughLayer _layer;
+        Gradient _superhotGradient;
         bool _safety;
 
-        void Awake() => Instance = this;
+        void Awake()
+        {
+            Instance = this;
+            Current = (Style)Mathf.Clamp(PlayerPrefs.GetInt(Key, (int)Style.White), 0, 2);
+            _superhotGradient = new Gradient();
+            _superhotGradient.SetKeys(
+                new[]
+                {
+                    new GradientColorKey(new Color(0.55f, 0.6f, 0.66f), 0f),
+                    new GradientColorKey(new Color(0.86f, 0.88f, 0.9f), 0.5f),
+                    new GradientColorKey(Color.white, 1f),
+                },
+                new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) });
+        }
 
         void Start()
         {
@@ -32,9 +60,11 @@ namespace Stopklatka
                 manager.shouldBoundaryVisibilityBeSuppressed = _layer.enabled;
         }
 
-        public void Toggle()
+        public void Cycle()
         {
-            Stylized = !Stylized;
+            Current = (Style)(((int)Current + 1) % 3);
+            PlayerPrefs.SetInt(Key, (int)Current);
+            PlayerPrefs.Save();
             Apply();
         }
 
@@ -48,8 +78,13 @@ namespace Stopklatka
         void Apply()
         {
             if (_layer == null) return;
-            if (Stylized && !_safety) _layer.SetBrightnessContrastSaturation(0.12f, 0.08f, -0.7f);
-            else _layer.DisableColorMap();
+            if (_safety || Current == Style.Normal)
+            {
+                _layer.DisableColorMap();
+                return;
+            }
+            if (Current == Style.White) _layer.SetBrightnessContrastSaturation(0.15f, 0.08f, -0.75f);
+            else _layer.SetColorMapControls(-0.05f, 0.1f, 0f, _superhotGradient);
         }
     }
 }

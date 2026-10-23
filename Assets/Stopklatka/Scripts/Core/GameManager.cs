@@ -25,7 +25,8 @@ namespace Stopklatka
 
         readonly List<MenuTarget> _menuTargets = new();
         int _toSpawn;
-        string _menuText = "";
+        string _menuText = "", _menuProblem;
+        Vector3 _menuOrigin, _menuRight = Vector3.right;
         float _nextSpawnAt, _outside, _inside;
         Coroutine _flow;
 
@@ -39,7 +40,7 @@ namespace Stopklatka
         {
             yield return null;
             Hud.Instance.Title("STOPKLATKA", 0f, Color.white);
-            Hud.Instance.Sub("Wczytuję skan szkoły…", 0f);
+            Hud.Instance.Sub("Wczytuję skan pomieszczeń…", 0f);
             float until = Time.realtimeSinceStartup + 15f;
             while (RoomService.Instance != null && !RoomService.Instance.Ready && Time.realtimeSinceStartup < until) yield return null;
             var problem = RoomService.Instance != null ? RoomService.Instance.Problem : null;
@@ -96,8 +97,11 @@ namespace Stopklatka
             float chest = head.position.y - 0.3f;
             var basePos = new Vector3(head.position.x, chest, head.position.z) + fwd * 1.3f;
 
+            _menuOrigin = basePos;
+            _menuRight = right;
             _menuTargets.Add(Factory.CreateMenuTarget("START", basePos, Mats.Target, 0.22f, () => StartWave(1)));
-            _menuTargets.Add(Factory.CreateMenuTarget(StyleLabel(), basePos - right * 0.65f + Vector3.up * 0.05f, Mats.Glass, 0.14f, OnStyleTarget));
+            SpawnStyleTarget();
+            SpawnModeTarget();
 
             if (!PlayerHoldsGun())
             {
@@ -106,32 +110,40 @@ namespace Stopklatka
                 gun.SetHovering(true);
             }
 
-            _menuText = string.IsNullOrEmpty(problem)
-                ? "Czas płynie tylko, kiedy się ruszasz.\nWeź pistolet (grip) i strzel w czerwony kryształ (spust)."
-                : problem + "\nMożesz grać wokół siebie: strzel w czerwony kryształ.";
+            _menuProblem = problem;
             ShowMenuText();
         }
 
         void ShowMenuText()
         {
+            _menuText = string.IsNullOrEmpty(_menuProblem)
+                ? $"Tryb: {GameMode.Profile.Label}. Czas płynie tylko, kiedy się ruszasz.\nWeź pistolet (grip) i strzel w czerwony kryształ (spust)."
+                : _menuProblem + "\nMożesz grać wokół siebie: strzel w czerwony kryształ.";
             Hud.Instance.Title("STOPKLATKA", 0f, Color.white);
             Hud.Instance.Sub(_menuText, 0f);
         }
 
-        void OnStyleTarget()
+        // Toggle crystals shatter when used, so each press spawns a fresh one in the same spot.
+        void SpawnStyleTarget()
         {
-            PassthroughStyle.Instance?.Toggle();
-            if (Current != State.Menu) return;
-            // recreate the toggle so it can be used again
-            var rig = PlayerRig.Instance;
-            var fwd = Flat(rig.Head.forward);
-            var right = Vector3.Cross(Vector3.up, fwd);
-            var pos = new Vector3(rig.Head.position.x, rig.Head.position.y - 0.25f, rig.Head.position.z) + fwd * 1.3f - right * 0.65f;
-            _menuTargets.Add(Factory.CreateMenuTarget(StyleLabel(), pos, Mats.Glass, 0.14f, OnStyleTarget));
+            var label = $"STYL: {(PassthroughStyle.Instance != null ? PassthroughStyle.Instance.Label : "BIAŁY")}";
+            _menuTargets.Add(Factory.CreateMenuTarget(label, _menuOrigin - _menuRight * 0.65f + Vector3.up * 0.05f, Mats.Glass, 0.14f, () =>
+            {
+                PassthroughStyle.Instance?.Cycle();
+                if (Current == State.Menu) SpawnStyleTarget();
+            }));
         }
 
-        static string StyleLabel() =>
-            PassthroughStyle.Instance == null || PassthroughStyle.Instance.Stylized ? "STYL: BIAŁY" : "STYL: NORMALNY";
+        void SpawnModeTarget()
+        {
+            _menuTargets.Add(Factory.CreateMenuTarget($"TRYB: {GameMode.Profile.Label}", _menuOrigin + _menuRight * 0.65f + Vector3.up * 0.05f, Mats.Glass, 0.14f, () =>
+            {
+                GameMode.Toggle();
+                if (Current != State.Menu) return;
+                SpawnModeTarget();
+                ShowMenuText();
+            }));
+        }
 
         public void StartWave(int wave)
         {
@@ -144,7 +156,7 @@ namespace Stopklatka
             _nextSpawnAt = Time.time + 1.2f;
             TimeController.Instance.SetMode(TimeController.Mode.MotionDriven);
             SpawnPickups();
-            Hud.Instance.Title($"FALA {wave}", 2f, Red);
+            Hud.Instance.Title($"FALA {wave}", 2f, Red, pulse: true);
             Hud.Instance.Sub(wave == 1 ? "Stój spokojnie, a czas prawie stanie." : "", 3f);
         }
 
@@ -170,7 +182,7 @@ namespace Stopklatka
             Current = State.Dead;
             TimeController.Instance.SetMode(TimeController.Mode.Fixed, 0.08f);
             Hud.Instance.RedFlash(0.8f);
-            Hud.Instance.Title("TRAFIONY", 2.2f, Red);
+            Hud.Instance.Title("TRAFIONY", 2.2f, Red, pulse: true);
             SoundBank.Instance?.PlayUi(Sfx.Death, 1f);
             foreach (var hand in FindObjectsByType<ControllerHand>(FindObjectsSortMode.None)) hand.Haptic(1f, 0.4f);
             yield return new WaitForSecondsRealtime(2.2f);
@@ -188,7 +200,7 @@ namespace Stopklatka
             {
                 TimeController.Instance.SetMode(TimeController.Mode.Paused);
                 Hud.Instance.Title("PAUZA", 0f, Color.white);
-                Hud.Instance.Sub("Wyszedłeś poza zeskanowany obszar. Wróć, żeby grać dalej.", 0f);
+                Hud.Instance.Sub("Jesteś poza zeskanowanym obszarem. Wróć, żeby grać dalej.", 0f);
             }
             else
             {

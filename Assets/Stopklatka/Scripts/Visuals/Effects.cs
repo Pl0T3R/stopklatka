@@ -22,15 +22,61 @@ namespace Stopklatka
         }
     }
 
+    /// <summary>Red ring that spreads over the floor where an enemy is forming. Game time.</summary>
+    public class RingFx : MonoBehaviour
+    {
+        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        static MaterialPropertyBlock _block;
+
+        MeshRenderer _renderer;
+        Color _color;
+        float _age, _seconds, _radius;
+
+        public void Setup(MeshRenderer r)
+        {
+            _renderer = r;
+            _color = r.sharedMaterial.GetColor(BaseColorId);
+        }
+
+        public void Show(float radius, float seconds)
+        {
+            _radius = radius;
+            _seconds = seconds;
+            _age = 0f;
+            Apply(0f);
+        }
+
+        void Update()
+        {
+            _age += Time.deltaTime;
+            float t = _age / _seconds;
+            if (t >= 1f) { Effects.Release(this); return; }
+            Apply(t);
+        }
+
+        void Apply(float t)
+        {
+            float ease = 1f - (1f - t) * (1f - t);
+            transform.localScale = Vector3.one * Mathf.Lerp(0.15f, _radius, ease);
+            _block ??= new MaterialPropertyBlock();
+            var c = _color;
+            c.a *= Mathf.Clamp01(t * 6f) * (1f - t);
+            _block.SetColor(BaseColorId, c);
+            _renderer.SetPropertyBlock(_block);
+        }
+    }
+
     public static class Effects
     {
         static Pool<Flash> _flashes;
-        static Mesh _flashMesh;
+        static Pool<RingFx> _rings;
+        static Mesh _flashMesh, _ringMesh;
 
         static Pool<Flash> Flashes => _flashes ??= new Pool<Flash>("Flashes", CreateFlash, 8);
+        static Pool<RingFx> Rings => _rings ??= new Pool<RingFx>("Spawn Rings", CreateRing, 4);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() { _flashes = null; }
+        static void ResetStatics() { _flashes = null; _rings = null; }
 
         public static void MuzzleFlash(Vector3 position, Quaternion rotation)
         {
@@ -45,9 +91,28 @@ namespace Stopklatka
             ShardSystem.Burst(point + normal * 0.02f, Mats.Get(Mats.Weapon), 3, normal * 1.2f, 0.8f, 0.008f, 0.016f);
         }
 
-        public static void Release(Flash f) => Flashes.Release(f);
+        /// <summary>Bright pop where an enemy was hit, as it shatters.</summary>
+        public static void KillFlash(Vector3 point, Vector3 direction)
+        {
+            var f = Flashes.Get(point, Quaternion.LookRotation(direction.sqrMagnitude > 1e-6f ? direction : Vector3.forward));
+            f.Show(0.16f, 0.09f);
+            ShardSystem.Burst(point, Mats.Get(Mats.Glass), 5, direction * 1.5f, 1.4f, 0.008f, 0.018f);
+        }
 
-        public static void ClearAll() => _flashes?.ReleaseAll();
+        /// <summary>Ring on the floor under a spawning enemy.</summary>
+        public static void SpawnRing(Vector3 floorPoint, float seconds)
+        {
+            Rings.Get(floorPoint + Vector3.up * 0.01f, Quaternion.identity).Show(0.9f, seconds);
+        }
+
+        public static void Release(Flash f) => Flashes.Release(f);
+        public static void Release(RingFx r) => Rings.Release(r);
+
+        public static void ClearAll()
+        {
+            _flashes?.ReleaseAll();
+            _rings?.ReleaseAll();
+        }
 
         static Flash CreateFlash()
         {
@@ -59,6 +124,28 @@ namespace Stopklatka
             }
             var go = MeshKit.Part("Flash", null, _flashMesh, Mats.Get(Mats.Flash));
             return go.AddComponent<Flash>();
+        }
+
+        static RingFx CreateRing()
+        {
+            if (_ringMesh == null)
+            {
+                // unit radius: a sharp bright outer edge that fades inward over a faint fill
+                var b = new MeshKit.Builder();
+                b.Ring(Vector3.zero, Quaternion.identity, 0f, 0.75f, 40);
+                b.Ring(Vector3.zero, Quaternion.identity, 0.75f, 0.92f, 40);
+                b.Ring(Vector3.zero, Quaternion.identity, 0.92f, 1f, 40);
+                _ringMesh = b.ToMesh("Spawn Ring", p =>
+                {
+                    float r = new Vector2(p.x, p.z).magnitude;
+                    float a = r < 0.01f ? 0f : r < 0.8f ? 0.08f : r < 0.95f ? 0.3f : 1f;
+                    return new Color(1f, 1f, 1f, a);
+                });
+            }
+            var go = MeshKit.Part("Spawn Ring", null, _ringMesh, Mats.Get(Mats.RingFx));
+            var ring = go.AddComponent<RingFx>();
+            ring.Setup(go.GetComponent<MeshRenderer>());
+            return ring;
         }
     }
 }

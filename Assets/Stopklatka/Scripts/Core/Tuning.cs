@@ -28,6 +28,8 @@ namespace Stopklatka
             Physics.IgnoreLayerCollision(Nav, Grabbable);
             Physics.IgnoreLayerCollision(Nav, Shard);
             Physics.IgnoreLayerCollision(Nav, Enemy);
+            // room walls are thin one-sided meshes: hit them from either side
+            Physics.queriesHitBackfaces = true;
         }
     }
 
@@ -49,22 +51,22 @@ namespace Stopklatka
 
         // Bullets (game-time m/s)
         public const float PlayerBulletSpeed = 26f;
-        public const float EnemyBulletSpeed = 6.5f;
+        public static float EnemyBulletSpeed => GameMode.Profile.EnemyBulletSpeed;
         public const float BulletLifetime = 8f;
 
-        // Enemies
-        public const float EnemyWalkSpeed = 1.0f;
-        public const float EnemyMinSpawnDistance = 2.5f;
-        public const float EnemyMaxSpawnDistance = 9f;
-        public const float EnemyPreferredRange = 4f;
+        // Enemies (school and home differ, see GameMode.cs)
+        public static float EnemyWalkSpeed => GameMode.Profile.WalkSpeed;
+        public static float EnemyMinSpawnDistance => GameMode.Profile.MinSpawnDistance;
+        public static float EnemyMaxSpawnDistance => GameMode.Profile.MaxSpawnDistance;
+        public static float EnemyPreferredRange => GameMode.Profile.PreferredRange;
         public const float EnemySightRange = 10f;
         public const float EnemyPunchRange = 0.85f;
-        public const int MaxEnemiesAlive = 6;
-        public const int MaxEnemiesPerWave = 12;
 
-        public static int EnemiesInWave(int wave) => Mathf.Min(2 + wave, MaxEnemiesPerWave);
-        public static int AliveCap(int wave) => Mathf.Min(2 + wave / 2, MaxEnemiesAlive);
-        public static float ReactionTime(int wave) => Mathf.Lerp(1.3f, 0.55f, Mathf.Clamp01((wave - 1) / 8f));
+        public static int EnemiesInWave(int wave) =>
+            Mathf.Min(2 + Mathf.FloorToInt(wave * GameMode.Profile.WaveGrowth), GameMode.Profile.MaxPerWave);
+        public static int AliveCap(int wave) => Mathf.Min(2 + wave / 2, GameMode.Profile.MaxAlive);
+        public static float ReactionTime(int wave) =>
+            Mathf.Lerp(1.3f, 0.55f, Mathf.Clamp01((wave - 1) / 8f)) * GameMode.Profile.ReactionMultiplier;
         public static float FireInterval(int wave) => Mathf.Lerp(3.0f, 1.6f, Mathf.Clamp01((wave - 1) / 8f));
         public static float ArmedChance(int wave) => Mathf.Lerp(0.55f, 0.85f, Mathf.Clamp01((wave - 1) / 6f));
         public static float ShotgunChance(int wave) => wave < 3 ? 0f : 0.25f;

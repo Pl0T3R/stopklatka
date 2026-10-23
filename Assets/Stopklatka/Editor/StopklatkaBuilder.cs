@@ -121,32 +121,50 @@ namespace Stopklatka.EditorTools
         public static void CreateMaterials()
         {
             Directory.CreateDirectory(MaterialDir);
-            Crystal(Mats.Enemy, new Color(0.86f, 0.1f, 0.08f), new Color(1f, 0.62f, 0.55f), 0.55f, 0.6f, 0f);
-            Crystal(Mats.Weapon, new Color(0.07f, 0.07f, 0.08f), new Color(0.55f, 0.55f, 0.6f), 0.5f, 0.8f, 0f);
-            Crystal(Mats.Blade, new Color(0.8f, 0.82f, 0.86f), Color.white, 0.6f, 0.7f, 0f);
-            Crystal(Mats.Glass, new Color(0.86f, 0.93f, 0.96f), Color.white, 0.7f, 0.7f, 0.05f);
-            Crystal(Mats.Target, new Color(0.95f, 0.15f, 0.1f), new Color(1f, 0.7f, 0.6f), 0.6f, 0.8f, 0.25f);
-            Flat(Mats.EnemyTrail, new Color(1f, 0.15f, 0.1f, 0.55f));
-            Flat(Mats.PlayerTrail, new Color(0.12f, 0.12f, 0.14f, 0.45f));
+            // Superhot palette: red enemies, glossy black weapons, white glass. Tune colors here.
+            // Crystal(name, lit, shadow, rim color, rim strength, highlight strength, gloss, emission)
+            Crystal(Mats.Enemy, new Color(0.92f, 0.13f, 0.09f), new Color(0.5f, 0.03f, 0.04f), new Color(1f, 0.6f, 0.52f), 0.65f, 0.55f, 40f, 0f);
+            Crystal(Mats.EnemyDark, new Color(0.62f, 0.05f, 0.05f), new Color(0.3f, 0.01f, 0.02f), new Color(1f, 0.4f, 0.35f), 0.5f, 0.4f, 32f, 0f);
+            var reveal = Crystal(Mats.EnemyReveal, new Color(0.92f, 0.13f, 0.09f), new Color(0.5f, 0.03f, 0.04f), new Color(1f, 0.6f, 0.52f), 0.65f, 0.55f, 40f, 0f);
+            reveal.SetColor("_RevealColor", new Color(1f, 0.85f, 0.75f));
+            reveal.EnableKeyword("_REVEAL");
+            Crystal(Mats.Weapon, new Color(0.1f, 0.1f, 0.11f), new Color(0.03f, 0.03f, 0.035f), new Color(0.5f, 0.52f, 0.58f), 0.5f, 0.9f, 64f, 0f);
+            Crystal(Mats.Blade, new Color(0.85f, 0.87f, 0.9f), new Color(0.5f, 0.53f, 0.58f), Color.white, 0.6f, 1.2f, 128f, 0f);
+            Crystal(Mats.Glass, new Color(0.9f, 0.95f, 0.97f), new Color(0.62f, 0.72f, 0.78f), Color.white, 0.7f, 1f, 96f, 0.05f);
+            Crystal(Mats.Target, new Color(0.98f, 0.16f, 0.1f), new Color(0.6f, 0.04f, 0.04f), new Color(1f, 0.7f, 0.6f), 0.8f, 0.8f, 48f, 0.25f);
+            Flat(Mats.EnemyTrail, new Color(1f, 0.12f, 0.08f, 0.75f));
+            Flat(Mats.PlayerTrail, new Color(0.08f, 0.08f, 0.1f, 0.6f));
             Flat(Mats.Flash, new Color(1f, 0.92f, 0.65f, 0.9f));
-            Flat(Mats.RedFlash, new Color(1f, 0f, 0f, 0.5f));
+            Flat(Mats.RedFlash, new Color(0.9f, 0.02f, 0.02f, 0.6f));
+            // things lying on the real floor: the bias stops the floor's own depth from hiding them
+            Flat(Mats.FloorShadow, new Color(0.04f, 0.04f, 0.06f, 0.42f), 0.08f);
+            Flat(Mats.RingFx, new Color(1f, 0.12f, 0.08f, 0.85f), 0.08f);
             Flat(Mats.Hidden, new Color(0f, 0f, 0f, 0f));
             var text = Material(Mats.Text, "Stopklatka/Text");
             text.SetColor("_BaseColor", Color.white);
             AssetDatabase.SaveAssets();
         }
 
-        static void Crystal(string name, Color baseColor, Color rim, float ambient, float rimStrength, float emission)
+        static Material Crystal(string name, Color lit, Color shadow, Color rim, float rimStrength, float specStrength, float gloss, float emission)
         {
             var m = Material(name, "Stopklatka/Crystal");
-            m.SetColor("_BaseColor", baseColor);
+            m.SetColor("_BaseColor", lit);
+            m.SetColor("_ShadowColor", shadow);
             m.SetColor("_RimColor", rim);
-            m.SetFloat("_Ambient", ambient);
             m.SetFloat("_RimStrength", rimStrength);
+            m.SetFloat("_SpecStrength", specStrength);
+            m.SetFloat("_Gloss", gloss);
             m.SetFloat("_Emission", emission);
+            m.DisableKeyword("_REVEAL");
+            return m;
         }
 
-        static void Flat(string name, Color color) => Material(name, "Stopklatka/Transparent").SetColor("_BaseColor", color);
+        static void Flat(string name, Color color, float occlusionBias = 0f)
+        {
+            var m = Material(name, "Stopklatka/Transparent");
+            m.SetColor("_BaseColor", color);
+            m.SetFloat("_OcclusionBias", occlusionBias);
+        }
 
         static Material Material(string name, string shaderName)
         {
@@ -232,6 +250,7 @@ namespace Stopklatka.EditorTools
                             MRUKAnchor.SceneLabels.COUCH | MRUKAnchor.SceneLabels.STORAGE |
                             MRUKAnchor.SceneLabels.BED | MRUKAnchor.SceneLabels.SCREEN |
                             MRUKAnchor.SceneLabels.OTHER;
+            effect.CutHoles = MRUKAnchor.SceneLabels.DOOR_FRAME;   // bullets and enemy sight pass through doorways
             effect.MeshMaterial = AssetDatabase.LoadAssetAtPath<Material>($"{MaterialDir}/{Mats.Hidden}.mat");
             effect.Layer = Layers.Room;
             var effectSo = new SerializedObject(effect);

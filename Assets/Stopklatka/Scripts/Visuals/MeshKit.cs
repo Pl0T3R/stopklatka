@@ -127,12 +127,30 @@ namespace Stopklatka
                 }
             }
 
-            public Mesh ToMesh(string name)
+            /// <summary>Flat ring (or disc when inner is 0) in the XZ plane of rotation, for floor marks and the hit vignette.</summary>
+            public void Ring(Vector3 center, Quaternion rotation, float inner, float outer, int segments)
+            {
+                for (int i = 0; i < segments; i++)
+                {
+                    float a0 = i * Mathf.PI * 2f / segments, a1 = (i + 1) * Mathf.PI * 2f / segments;
+                    var d0 = rotation * new Vector3(Mathf.Cos(a0), 0f, Mathf.Sin(a0));
+                    var d1 = rotation * new Vector3(Mathf.Cos(a1), 0f, Mathf.Sin(a1));
+                    if (inner <= 0f) Tri(center, center + d0 * outer, center + d1 * outer, center);
+                    else Quad(center + d0 * inner, center + d0 * outer, center + d1 * outer, center + d1 * inner, center);
+                }
+            }
+
+            /// <param name="color">Vertex color from the vertex position (used by the transparent shader
+            /// for fades along streaks and toward the edges of shadows). White when omitted.</param>
+            public Mesh ToMesh(string name, System.Func<Vector3, Color> color = null)
             {
                 var m = new Mesh { name = name };
                 if (_v.Count > 65000) m.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+                var colors = new List<Color>(_v.Count);
+                foreach (var v in _v) colors.Add(color != null ? color(v) : Color.white);
                 m.SetVertices(_v);
                 m.SetNormals(_n);
+                m.SetColors(colors);
                 m.SetTriangles(_t, 0);
                 m.RecalculateBounds();
                 m.UploadMeshData(true);

@@ -4,12 +4,13 @@ namespace Stopklatka
 {
     /// <summary>
     /// The red crystal figure: a faceted torso+head piece and rigid limbs, animated in code
-    /// (walk cycle, aiming arm, punch). All enemies share the same meshes and material, so
-    /// they batch well. About 9 draw calls per enemy.
+    /// (walk cycle, aiming arm, punch), plus a soft shadow on the floor. All enemies share the same
+    /// meshes and materials, so they batch well. About 10 draw calls per enemy.
+    /// While spawning it materializes from the floor up (Reveal), using a separate material only then.
     /// </summary>
     public class EnemyBody : MonoBehaviour
     {
-        public Transform Torso, ShoulderL, ShoulderR, ElbowL, ElbowR, HandSocketR, HipL, HipR, KneeL, KneeR;
+        public Transform Torso, ShoulderL, ShoulderR, ElbowL, ElbowR, HandSocketR, HipL, HipR, KneeL, KneeR, Shadow;
         public Renderer[] Parts;
 
         /// <summary>World point the right arm aims at, or null for a relaxed walk.</summary>
@@ -17,7 +18,7 @@ namespace Stopklatka
         /// <summary>0..1 punch extension toward PunchTarget.</summary>
         public float Punch;
         public Vector3 PunchTarget;
-        /// <summary>0..1 spawn-in progress (scales the figure up from the floor).</summary>
+        /// <summary>0..1 spawn-in progress (grows the floor shadow).</summary>
         public float Appear = 1f;
         public float Wobble;
 
@@ -26,11 +27,37 @@ namespace Stopklatka
 
         const float ShoulderY = 1.46f, HipY = 0.9f;
 
-        static Mesh _torsoMesh, _upperArmMesh, _forearmMesh, _thighMesh, _shinMesh;
+        static readonly int RevealYId = Shader.PropertyToID("_RevealY");
+        static MaterialPropertyBlock _revealBlock;
+        static Mesh _torsoMesh, _upperArmMesh, _forearmMesh, _thighMesh, _shinMesh, _shadowMesh;
+
+        /// <summary>Switches to the reveal material: everything above worldY is cut away.</summary>
+        public void BeginReveal(Material reveal, float worldY)
+        {
+            foreach (var r in Parts) r.sharedMaterial = reveal;
+            SetReveal(worldY);
+        }
+
+        public void SetReveal(float worldY)
+        {
+            _revealBlock ??= new MaterialPropertyBlock();
+            _revealBlock.SetFloat(RevealYId, worldY);
+            foreach (var r in Parts) r.SetPropertyBlock(_revealBlock);
+        }
+
+        /// <summary>Back to the shared material (and the SRP batcher).</summary>
+        public void EndReveal(Material normal)
+        {
+            foreach (var r in Parts)
+            {
+                r.SetPropertyBlock(null);
+                r.sharedMaterial = normal;
+            }
+        }
 
         public void Animate(float dt, Vector3 worldVelocity)
         {
-            transform.localScale = Vector3.one * Mathf.SmoothStep(0.05f, 1f, Appear);
+            if (Shadow != null) Shadow.localScale = Vector3.one * Mathf.SmoothStep(0.2f, 1f, Appear);
 
             var flatVel = Vector3.ProjectOnPlane(worldVelocity, Vector3.up);
             float speed = flatVel.magnitude;
@@ -76,10 +103,14 @@ namespace Stopklatka
             ShoulderR.localRotation = _aimRot;
         }
 
-        public static EnemyBody Build(Transform root, Material mat)
+        public static EnemyBody Build(Transform root, Material mat, Material shadowMat)
         {
             EnsureMeshes();
             var body = root.gameObject.AddComponent<EnemyBody>();
+
+            var shadow = MeshKit.Part("Shadow", root, _shadowMesh, shadowMat);
+            shadow.transform.localPosition = new Vector3(0f, 0.008f, 0f);
+            body.Shadow = shadow.transform;
 
             body.Torso = new GameObject("Torso").transform;
             body.Torso.SetParent(root, false);
@@ -129,18 +160,21 @@ namespace Stopklatka
             var rng = new System.Random(2024);
 
             var t = new MeshKit.Builder();
-            t.Ico(new Vector3(0f, 1.63f, 0.01f), new Vector3(0.105f, 0.128f, 0.118f), 0.06f, rng);                 // head
-            t.Prism(new Vector3(0f, 1.44f, 0f), new Vector3(0f, 1.53f, 0f), 0.05f, 0.045f, 6);                     // neck
+            t.Ico(new Vector3(0f, 1.67f, 0.012f), new Vector3(0.1f, 0.122f, 0.112f), 0.05f, rng);                 // skull
+            t.Box(new Vector3(0f, 1.605f, 0.032f), new Vector3(0.12f, 0.075f, 0.115f), Quaternion.Euler(8f, 0f, 0f), 1.25f, 0.006f, rng); // jaw
+            t.Prism(new Vector3(0f, 1.44f, 0f), new Vector3(0f, 1.575f, 0.008f), 0.05f, 0.042f, 6);               // neck
             t.Box(new Vector3(0f, 1.31f, 0f), new Vector3(0.42f, 0.32f, 0.22f), Quaternion.identity, 1.08f, 0.012f, rng); // chest
             t.Box(new Vector3(0f, 1.07f, 0.005f), new Vector3(0.31f, 0.18f, 0.19f), Quaternion.identity, 1.12f, 0.01f, rng); // abdomen
             t.Box(new Vector3(0f, 0.93f, 0f), new Vector3(0.35f, 0.13f, 0.21f), Quaternion.identity, 0.92f, 0.01f, rng);   // pelvis
             _torsoMesh = t.ToMesh("Enemy Torso");
 
             var ua = new MeshKit.Builder();
+            ua.Ico(Vector3.zero, new Vector3(0.074f, 0.068f, 0.074f), 0.05f, rng);                               // shoulder cap
             ua.Prism(new Vector3(0f, 0.02f, 0f), new Vector3(0f, -0.29f, 0f), 0.058f, 0.045f, 6, 0.006f, rng);
             _upperArmMesh = ua.ToMesh("Enemy Upper Arm");
 
             var fa = new MeshKit.Builder();
+            fa.Ico(Vector3.zero, new Vector3(0.048f, 0.048f, 0.048f), 0.04f, rng);                               // elbow
             fa.Prism(new Vector3(0f, 0f, 0f), new Vector3(0f, -0.26f, 0f), 0.045f, 0.034f, 6, 0.005f, rng);
             fa.Box(new Vector3(0f, -0.31f, 0.01f), new Vector3(0.075f, 0.1f, 0.04f), Quaternion.identity, 0.9f, 0.006f, rng); // hand
             _forearmMesh = fa.ToMesh("Enemy Forearm");
@@ -150,9 +184,20 @@ namespace Stopklatka
             _thighMesh = th.ToMesh("Enemy Thigh");
 
             var sh = new MeshKit.Builder();
+            sh.Ico(new Vector3(0f, 0f, 0.012f), new Vector3(0.064f, 0.06f, 0.064f), 0.04f, rng);                // knee
             sh.Prism(new Vector3(0f, 0f, 0f), new Vector3(0f, -0.41f, 0f), 0.06f, 0.045f, 6, 0.006f, rng);
             sh.Box(new Vector3(0f, -0.43f, 0.06f), new Vector3(0.1f, 0.06f, 0.24f), Quaternion.identity, 0.85f, 0.008f, rng); // foot
             _shinMesh = sh.ToMesh("Enemy Shin");
+
+            // soft dark disc: opaque-ish center fading to nothing at the edge
+            var sd = new MeshKit.Builder();
+            sd.Ring(Vector3.zero, Quaternion.identity, 0f, 0.17f, 24);
+            sd.Ring(Vector3.zero, Quaternion.identity, 0.17f, 0.36f, 24);
+            _shadowMesh = sd.ToMesh("Enemy Shadow", p =>
+            {
+                float r = new Vector2(p.x, p.z).magnitude;
+                return new Color(1f, 1f, 1f, r < 0.01f ? 1f : r < 0.2f ? 0.7f : 0f);
+            });
         }
     }
 }
