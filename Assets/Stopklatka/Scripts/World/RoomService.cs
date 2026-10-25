@@ -79,11 +79,16 @@ namespace Stopklatka
 
         void UpdateFloor(MRUKRoom room)
         {
-            if (room == null || room.FloorAnchor == null || PlayerRig.Instance == null) return;
-            float y = room.FloorAnchor.transform.position.y;
+            var floor = FloorOf(room);
+            if (floor == null || PlayerRig.Instance == null) return;
+            float y = floor.transform.position.y;
             PlayerRig.Instance.FloorY = y;
             Shader.SetGlobalFloat(FloorYId, y);
         }
+
+        /// <summary>The room's (first) floor anchor. MRUK 207 marks the single FloorAnchor property obsolete.</summary>
+        static MRUKAnchor FloorOf(MRUKRoom room) =>
+            room != null && room.FloorAnchors.Count > 0 ? room.FloorAnchors[0] : null;
 
         void OnNavMeshReady()
         {
@@ -144,26 +149,38 @@ namespace Stopklatka
             return null;
         }
 
+        NavMeshPath _path;   // created on first use (not in a field initializer: it's a native object)
+
         /// <summary>
         /// Finds a floor spot for an enemy: inside a scanned room, not inside furniture, between
         /// the min and max distance from the player, and connected to the player by the NavMesh.
         /// </summary>
-        public bool TryFindEnemySpawn(Vector3 playerFloor, out Vector3 position)
+        public bool TryFindEnemySpawn(Vector3 playerFloor, out Vector3 position) =>
+            TryFindEnemySpawn(playerFloor, Vector3.zero, out position);
+
+        /// <summary>
+        /// Like above, but enemies "walk in": often at a scanned door frame on your floor
+        /// (GameConfig enemies.doorSpawnChance), otherwise sometimes out of your view
+        /// (outOfViewChance; viewDir is where you look, zero for no preference). The distance limits
+        /// and "inside a scanned room" always hold; a second pass with a shorter minimum (never under
+        /// 1.2 m) is for tiny rooms.
+        /// </summary>
+        public bool TryFindEnemySpawn(Vector3 playerFloor, Vector3 viewDir, out Vector3 position)
         {
-            // second pass with a shorter minimum distance, for small rooms
             float min = Tuning.EnemyMinSpawnDistance;
-            return TryFindEnemySpawn(playerFloor, min, out position) ||
-                   TryFindEnemySpawn(playerFloor, Mathf.Max(1.2f, min * 0.6f), out position);
+            if (HasScan && Random.value < Tuning.DoorSpawnChance && TryDoorSpawn(playerFloor, min, out position)) return true;
+            var flatView = new Vector3(viewDir.x, 0f, viewDir.z);
+            if (flatView.sqrMagnitude > 1e-4f && Random.value < Tuning.OutOfViewChance &&
+                TryFindEnemySpawn(playerFloor, min, flatView.normalized, out position)) return true;
+            return TryFindEnemySpawn(playerFloor, min, Vector3.zero, out position) ||
+                   TryFindEnemySpawn(playerFloor, Mathf.Max(1.2f, min * 0.6f), Vector3.zero, out position);
         }
 
-        bool TryFindEnemySpawn(Vector3 playerFloor, float minDistance, out Vector3 position)
+        bool TryFindEnemySpawn(Vector3 playerFloor, float minDistance, Vector3 avoidView, out Vector3 position)
         {
             position = default;
-            var filter = new NavMeshQueryFilter { agentTypeID = NavAgentTypeId, areaMask = NavMesh.AllAreas };
-            NavMeshHit playerHit = default;
-            bool playerOnNav = NavReady && NavMesh.SamplePosition(playerFloor, out playerHit, 1.0f, filter);
-            var path = new NavMeshPath();
             var playerRoom = HasScan ? RoomAt(playerFloor + Vector3.up) : null;
+            float minAngle = Tuning.OutOfViewAngle;
 
             for (int attempt = 0; attempt < 40; attempt++)
             {
@@ -184,20 +201,78 @@ namespace Stopklatka
                     candidate = playerFloor + new Vector3(dir.x, 0f, dir.y) * Random.Range(minDistance, Mathf.Max(minDistance + 0.5f, 5f));
                 }
 
-                float d = Vector3.Distance(new Vector3(candidate.x, 0f, candidate.z), new Vector3(playerFloor.x, 0f, playerFloor.z));
-                if (d < minDistance || d > Tuning.EnemyMaxSpawnDistance) continue;
-
-                if (NavReady)
+                if (avoidView != Vector3.zero)
                 {
-                    if (!NavMesh.SamplePosition(candidate, out var hit, 0.6f, filter)) continue;
-                    candidate = hit.position;
-                    if (playerOnNav && (!NavMesh.CalculatePath(candidate, playerHit.position, filter, path) || path.status != NavMeshPathStatus.PathComplete))
-                        continue;
+                    var to = new Vector3(candidate.x - playerFloor.x, 0f, candidate.z - playerFloor.z);
+                    if (Vector3.Angle(avoidView, to) < minAngle) continue;
                 }
-                position = candidate;
-                return true;
+                if (AcceptSpawn(ref candidate, playerFloor, minDistance))
+                {
+                    position = candidate;
+                    return true;
+                }
             }
             return false;
+        }
+
+        /// <summary>
+        /// A spot just inside a scanned door frame on the player's floor, as if the enemy walked in
+        /// through it. Both sides of each frame are tried; only a side inside a scanned room counts.
+        /// </summary>
+        bool TryDoorSpawn(Vector3 playerFloor, float minDistance, out Vector3 position)
+        {
+            position = default;
+            if (MRUK.Instance == null) return false;
+            float offset = Mathf.Max(0.3f, Tuning.DoorSpawnOffset);
+            int found = 0;
+            foreach (var room in MRUK.Instance.Rooms)
+            {
+                var floor = FloorOf(room);
+                if (floor == null) continue;
+                float floorY = floor.transform.position.y;
+                if (Mathf.Abs(floorY - playerFloor.y) > 0.6f) continue;   // stairs and other floors: no
+                foreach (var anchor in room.Anchors)
+                {
+                    if (anchor == null || !anchor.HasAnyLabel(MRUKAnchor.SceneLabels.DOOR_FRAME)) continue;
+                    // a door frame is a plane on a wall; its normal (Z) is horizontal
+                    var normal = Vector3.ProjectOnPlane(anchor.transform.forward, Vector3.up);
+                    if (normal.sqrMagnitude < 0.25f) continue;
+                    normal.Normalize();
+                    var foot = anchor.transform.position;
+                    foot.y = floorY;
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        var candidate = foot + normal * (side * offset);
+                        var inRoom = RoomAt(candidate + Vector3.up);
+                        if (inRoom == null || inRoom.IsPositionInSceneVolume(candidate + Vector3.up * 0.4f, 0.2f)) continue;
+                        if (!AcceptSpawn(ref candidate, playerFloor, minDistance)) continue;
+                        // pick one of the valid spots at random (reservoir sampling, no list)
+                        found++;
+                        if (Random.Range(0, found) == 0) position = candidate;
+                    }
+                }
+            }
+            return found > 0;
+        }
+
+        /// <summary>Distance limits, and with a NavMesh: on it and connected to the player.</summary>
+        bool AcceptSpawn(ref Vector3 candidate, Vector3 playerFloor, float minDistance)
+        {
+            float d = Vector3.Distance(new Vector3(candidate.x, 0f, candidate.z), new Vector3(playerFloor.x, 0f, playerFloor.z));
+            if (d < minDistance || d > Tuning.EnemyMaxSpawnDistance) return false;
+            if (!NavReady) return true;
+
+            var filter = new NavMeshQueryFilter { agentTypeID = NavAgentTypeId, areaMask = NavMesh.AllAreas };
+            if (!NavMesh.SamplePosition(candidate, out var hit, 0.6f, filter)) return false;
+            // the sample may slide the spot: check the distance again on the NavMesh position
+            float dn = Vector3.Distance(new Vector3(hit.position.x, 0f, hit.position.z), new Vector3(playerFloor.x, 0f, playerFloor.z));
+            if (dn < minDistance) return false;
+            _path ??= new NavMeshPath();
+            if (NavMesh.SamplePosition(playerFloor, out var playerHit, 1.0f, filter) &&
+                (!NavMesh.CalculatePath(hit.position, playerHit.position, filter, _path) || _path.status != NavMeshPathStatus.PathComplete))
+                return false;
+            candidate = hit.position;
+            return true;
         }
 
         /// <summary>A spot for a weapon pickup: a tabletop near the player if there is one, else the floor.</summary>

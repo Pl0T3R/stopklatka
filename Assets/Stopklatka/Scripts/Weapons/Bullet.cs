@@ -67,6 +67,7 @@ namespace Stopklatka
             }
 
             transform.position = pos + step;
+            if (Owner == BulletOwner.Player) Enemy.NotifyBulletPass(pos, pos + step);   // near misses make enemies guard
             _movedFrame = Time.frameCount;
             _traveled += dist;
             _streak.localScale = new Vector3(_streakWidth, _streakWidth, Mathf.Min(_traveled, _streakMax));

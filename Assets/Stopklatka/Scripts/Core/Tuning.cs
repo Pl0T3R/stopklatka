@@ -100,6 +100,34 @@ namespace Stopklatka
             Mathf.Lerp(C.enemies.fireIntervalFirstWave, C.enemies.fireIntervalLateWave, Mathf.Clamp01((wave - 1) / 8f));
         public static float ArmedChance(int wave) =>
             Mathf.Lerp(C.enemies.armedFirstWave, C.enemies.armedLateWave, Mathf.Clamp01((wave - 1) / 6f));
-        public static float ShotgunChance(int wave) => wave < 3 ? 0f : C.enemies.shotgunShare;
+        public static float ShotgunChance(int wave) => wave < C.enemies.shotgunFromWave ? 0f : C.enemies.shotgunShare;
+        public static float SmgChance(int wave) => wave < C.enemies.smgFromWave ? 0f : C.enemies.smgShare;
+
+        // Enemy aiming, bursts, punches and guard (game seconds)
+        public static float AimTellSeconds => C.enemies.aimTellSeconds;
+        public static float AimLockAngle => C.enemies.aimLockAngle;
+        public static float AimInaccuracy => C.enemies.aimInaccuracy;
+        public static int EnemySmgBurstRounds => Mathf.Max(1, C.enemies.smgBurstRounds);
+        public static float EnemySmgBurstInterval => Mathf.Max(0.02f, C.enemies.smgBurstInterval);
+        public static float EnemySmgBurstSpread => C.enemies.smgBurstSpread;
+        public static float PunchWindupSeconds => Mathf.Max(0.05f, C.enemies.punchWindupSeconds);
+        public static float PunchStrikeSeconds => Mathf.Max(0.02f, C.enemies.punchStrikeSeconds);
+        public static float PunchRecoverSeconds => Mathf.Max(0.05f, C.enemies.punchRecoverSeconds);
+        public static bool DefensivePose => C.enemies.defensivePose;
+        public static float GuardSeconds => C.enemies.guardSeconds;
+        public static float GuardBulletDistance => C.enemies.guardBulletDistance;
+        public static float GuardNeighbourDistance => C.enemies.guardNeighbourDistance;
+
+        // Spawn points
+        public static float DoorSpawnChance => C.enemies.doorSpawnChance;
+        public static float DoorSpawnOffset => C.enemies.doorSpawnOffset;
+        public static float OutOfViewChance => C.enemies.outOfViewChance;
+        public static float OutOfViewAngle => C.enemies.outOfViewAngle;
+
+        // Enemy death (see ShatterSettings)
+        public static ShatterSettings Shatter => C.shatter;
+
+        // Levels (see LevelSettings)
+        public static LevelSettings Levels => C.levels;
     }
 }

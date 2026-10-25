@@ -33,17 +33,22 @@ namespace Stopklatka
         }
     }
 
-    /// <summary>Pooled shards for shattering enemies, bottles and bullet impacts.</summary>
+    /// <summary>
+    /// Pooled shards for shattering enemies, bottles and bullet impacts. Shard shapes are sharp
+    /// tetrahedra, thin triangular flakes and a few chunkier crystals, about 1 unit across, so the
+    /// size passed in is roughly the shard's size in metres. Lifetimes come from GameConfig shatter.
+    /// </summary>
     public static class ShardSystem
     {
-        const int MaxShards = 320;
+        const int MaxShards = 320;   // budget (PLAN.md)
         static Pool<Shard> _pool;
         static Mesh[] _meshes;
+        static int _nextMesh;
 
         static Pool<Shard> PoolInstance => _pool ??= new Pool<Shard>("Shards", Create, 160);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() { _pool = null; }
+        static void ResetStatics() { _pool = null; _nextMesh = 0; }
 
         /// <summary>Burst of shards from one point.</summary>
         public static void Burst(Vector3 center, Material mat, int count, Vector3 baseVelocity, float spread, float minSize, float maxSize)
@@ -80,13 +85,30 @@ namespace Stopklatka
 
         static void Spawn(Material mat, Vector3 pos, Vector3 velocity, float size)
         {
+            var cfg = Tuning.Shatter;
+            Emit(mat, pos, velocity, size, Random.Range(cfg.shardLifetimeMin, Mathf.Max(cfg.shardLifetimeMin, cfg.shardLifetimeMax)));
+        }
+
+        /// <summary>One shard. Over the budget, the oldest shard makes room.</summary>
+        public static void Emit(Material mat, Vector3 pos, Vector3 velocity, float size, float gameSeconds)
+        {
             var pool = PoolInstance;
             if (pool.Active.Count >= MaxShards) pool.Release(pool.Active[0]);
             var s = pool.Get(pos, Random.rotation);
-            s.Launch(mat, size, velocity, Random.Range(3.5f, 5.5f));
+            s.Launch(mat, size, velocity, gameSeconds);
+        }
+
+        /// <summary>A random shard lifetime from GameConfig shatter (game seconds).</summary>
+        public static float RandomLifetime()
+        {
+            var cfg = Tuning.Shatter;
+            return Random.Range(cfg.shardLifetimeMin, Mathf.Max(cfg.shardLifetimeMin, cfg.shardLifetimeMax));
         }
 
         public static void Release(Shard s) => PoolInstance.Release(s);
+
+        /// <summary>Creates the pool now (at load time) instead of at the first kill.</summary>
+        public static void Prewarm() => _ = PoolInstance;
 
         public static void ClearAll() => _pool?.ReleaseAll();
 
@@ -94,18 +116,25 @@ namespace Stopklatka
         {
             if (_meshes == null)
             {
+                // triangles and tetrahedra (STYLE_GUIDE 8.2), plus two chunkier crystals
                 var rng = new System.Random(77);
-                _meshes = new Mesh[6];
+                _meshes = new Mesh[8];
                 for (int i = 0; i < _meshes.Length; i++)
                 {
                     var b = new MeshKit.Builder();
-                    var radii = new Vector3(0.5f + (float)rng.NextDouble() * 0.5f, 0.3f + (float)rng.NextDouble() * 0.7f, 0.4f + (float)rng.NextDouble() * 0.6f);
-                    b.Ico(Vector3.zero, radii * 0.5f, 0.35f, rng);
+                    if (i < 4) b.Tetra(Vector3.zero, 0.55f + (float)rng.NextDouble() * 0.2f, 0.35f, rng);
+                    else if (i < 6) b.Plate(Vector3.zero, 1f, 0.12f + (float)rng.NextDouble() * 0.1f, rng);
+                    else
+                    {
+                        var radii = new Vector3(0.5f + (float)rng.NextDouble() * 0.5f, 0.3f + (float)rng.NextDouble() * 0.7f, 0.4f + (float)rng.NextDouble() * 0.6f);
+                        b.Ico(Vector3.zero, radii * 0.5f, 0.35f, rng);
+                    }
                     _meshes[i] = b.ToMesh($"Shard {i}");
                 }
             }
             var go = new GameObject("Shard") { layer = Layers.Shard };
-            var mesh = _meshes[Random.Range(0, _meshes.Length)];
+            // round-robin so every shape shows up in each burst
+            var mesh = _meshes[_nextMesh++ % _meshes.Length];
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var r = go.AddComponent<MeshRenderer>();
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;

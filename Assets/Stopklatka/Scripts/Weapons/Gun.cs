@@ -127,7 +127,10 @@ namespace Stopklatka
             _nextShot = Time.time + Cooldown;
         }
 
-        /// <summary>Enemies have unlimited ammo but slower bullets and a wobbly aim. (Enemy SMG bursts: stage 4.)</summary>
+        /// <summary>
+        /// One enemy shot (a shotgun fires all its pellets). Enemies have unlimited ammo but slower
+        /// bullets and a wobbly aim. SMG bursts are timed by <see cref="Enemy"/>, one call per round.
+        /// </summary>
         public void FireAsEnemy(Enemy shooter, Vector3 target, float inaccuracyDegrees)
         {
             var dir = (target - Muzzle.position).normalized;

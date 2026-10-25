@@ -145,6 +145,11 @@ namespace Stopklatka.EditorTools
             Flat(Mats.FloorShadow, new Color(0.04f, 0.04f, 0.06f, 0.42f), 0.08f);
             Flat(Mats.RingFx, new Color(1f, 0.12f, 0.08f, 0.85f), 0.08f);
             Flat(Mats.Hidden, new Color(0f, 0f, 0f, 0f));
+            // fracture glow (STYLE_GUIDE 8): white base, the cap/crack/flash meshes carry #FFD84D (core) to #FF9A1F (edge)
+            // as vertex colors, so one material serves every glowing break
+            Flat(Mats.Glow, Color.white);
+            // glowing shards: lit #FFD84D, shadow #FF9A1F, strong emission so they read as light, not paint
+            Crystal(Mats.GlowShard, new Color(1f, 0.847f, 0.302f), new Color(1f, 0.604f, 0.122f), new Color(1f, 0.95f, 0.75f), 0.5f, 0.4f, 24f, 0.45f);
             var text = Material(Mats.Text, "Stopklatka/Text");
             text.SetColor("_BaseColor", Color.white);
             AssetDatabase.SaveAssets();
@@ -271,6 +276,7 @@ namespace Stopklatka.EditorTools
             game.AddComponent<RoomService>();
             game.AddComponent<PassthroughStyle>();
             game.AddComponent<GameManager>();
+            game.AddComponent<LevelManager>();   // the playing loop (levels of waves); GameManager also adds it to older scenes
 
             SaveScene(scene, ScenePath);
             UseGameScene();

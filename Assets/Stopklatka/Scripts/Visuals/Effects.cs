@@ -5,6 +5,8 @@ namespace Stopklatka
     /// <summary>Short-lived flashes. They live in game time, so a muzzle flash lingers in slow motion.</summary>
     public class Flash : MonoBehaviour
     {
+        /// <summary>From the glow pool (yellow kill flash) instead of the muzzle-flash pool.</summary>
+        public bool Glow;
         float _until, _size;
 
         public void Show(float size, float seconds)
@@ -68,15 +70,16 @@ namespace Stopklatka
 
     public static class Effects
     {
-        static Pool<Flash> _flashes;
+        static Pool<Flash> _flashes, _glowFlashes;
         static Pool<RingFx> _rings;
         static Mesh _flashMesh, _ringMesh;
 
         static Pool<Flash> Flashes => _flashes ??= new Pool<Flash>("Flashes", CreateFlash, 8);
+        static Pool<Flash> GlowFlashes => _glowFlashes ??= new Pool<Flash>("Glow Flashes", CreateGlowFlash, 4);
         static Pool<RingFx> Rings => _rings ??= new Pool<RingFx>("Spawn Rings", CreateRing, 4);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() { _flashes = null; _rings = null; }
+        static void ResetStatics() { _flashes = null; _glowFlashes = null; _rings = null; }
 
         public static void MuzzleFlash(Vector3 position, Quaternion rotation)
         {
@@ -100,12 +103,20 @@ namespace Stopklatka
             ShardSystem.Burst(point, Mats.Get(Mats.Glass), 2, Vector3.zero, 1.2f, 0.006f, 0.01f);
         }
 
-        /// <summary>Bright pop where an enemy was hit, as it shatters.</summary>
+        /// <summary>Short bright #FFD84D pop where an enemy was hit, with a few glowing sparks (STYLE_GUIDE 8.1).</summary>
         public static void KillFlash(Vector3 point, Vector3 direction)
         {
-            var f = Flashes.Get(point, Quaternion.LookRotation(direction.sqrMagnitude > 1e-6f ? direction : Vector3.forward));
-            f.Show(0.16f, 0.09f);
-            ShardSystem.Burst(point, Mats.Get(Mats.Glass), 5, direction * 1.5f, 1.4f, 0.008f, 0.018f);
+            var cfg = Tuning.Shatter;
+            var f = GlowFlashes.Get(point, Quaternion.LookRotation(direction.sqrMagnitude > 1e-6f ? direction : Vector3.forward));
+            f.Show(cfg.flashSize, cfg.flashSeconds);
+            ShardSystem.Burst(point, Mats.Get(Mats.GlowShard), 5, direction * 1.5f, 1.4f, 0.008f, 0.018f);
+        }
+
+        /// <summary>The tell before an enemy shot: a small glint at the muzzle (game time, so it lingers in slow motion).</summary>
+        public static void AimGlint(Vector3 position, Vector3 direction)
+        {
+            var f = GlowFlashes.Get(position, Quaternion.LookRotation(direction.sqrMagnitude > 1e-6f ? direction : Vector3.forward));
+            f.Show(0.045f, Mathf.Max(0.08f, Tuning.AimTellSeconds * 0.6f));
         }
 
         /// <summary>Ring on the floor under a spawning enemy.</summary>
@@ -114,13 +125,30 @@ namespace Stopklatka
             Rings.Get(floorPoint + Vector3.up * 0.01f, Quaternion.identity).Show(0.9f, seconds);
         }
 
-        public static void Release(Flash f) => Flashes.Release(f);
+        /// <summary>Creates the pools now (at load time) instead of at the first shot or kill.</summary>
+        public static void Prewarm()
+        {
+            _ = Flashes;
+            _ = GlowFlashes;
+            _ = Rings;
+        }
+
+        public static void Release(Flash f)
+        {
+            if (f.Glow) GlowFlashes.Release(f);
+            else Flashes.Release(f);
+        }
         public static void Release(RingFx r) => Rings.Release(r);
 
+        /// <summary>Clears every pooled effect, including enemy debris, shards and cracks.</summary>
         public static void ClearAll()
         {
             _flashes?.ReleaseAll();
+            _glowFlashes?.ReleaseAll();
             _rings?.ReleaseAll();
+            ShardSystem.ClearAll();
+            DebrisSystem.ClearAll();
+            Cracks.ClearAll();
         }
 
         static Flash CreateFlash()
@@ -133,6 +161,14 @@ namespace Stopklatka
             }
             var go = MeshKit.Part("Flash", null, _flashMesh, Mats.Get(Mats.Flash));
             return go.AddComponent<Flash>();
+        }
+
+        static Flash CreateGlowFlash()
+        {
+            var go = MeshKit.Part("Glow Flash", null, GlowKit.Flash, Mats.Get(Mats.Glow));
+            var f = go.AddComponent<Flash>();
+            f.Glow = true;
+            return f;
         }
 
         static RingFx CreateRing()

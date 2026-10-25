@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Stopklatka
 {
     /// <summary>
-    /// Kills enemies when swung fast and cuts bullets out of the air. A bullet is cut when the
+    /// Cuts enemies in half when swung fast (see <see cref="Enemy.Cut"/>) and cuts bullets out of the air. A bullet is cut when the
     /// blade's path since the last frame passes it (not only when the bullet flies into a resting
     /// blade), so a quick swing at a nearly frozen bullet works in slow motion.
     /// </summary>
@@ -54,13 +54,18 @@ namespace Stopklatka
                 SoundBank.Instance?.Play(Sfx.Swing, tip, 0.6f, Random.Range(0.9f, 1.15f), false);
             }
 
+            // the cut plane holds the blade and the way it moves (STYLE_GUIDE 8.4: cut in half along the swing)
+            var cutNormal = Vector3.Cross(tip - bladeBase, swingDir);
             int n = Physics.OverlapCapsuleNonAlloc(bladeBase, tip, 0.05f, Hits, Layers.EnemyMask, QueryTriggerInteraction.Collide);
             for (int i = 0; i < n; i++)
             {
                 var enemy = Hits[i].GetComponentInParent<Enemy>();
                 if (enemy != null && _cutThisSwing.Add(enemy))
                 {
-                    enemy.Kill(Hits[i].ClosestPoint(tip), swingDir);
+                    // where the blade meets the body, moved onto the cut plane (which runs through the blade)
+                    var hit = Hits[i].ClosestPoint(tip);
+                    if (cutNormal.sqrMagnitude > 1e-8f) hit -= cutNormal.normalized * Vector3.Dot(hit - bladeBase, cutNormal.normalized);
+                    enemy.Cut(hit, cutNormal, swingDir);
                     SoundBank.Instance?.Play(Sfx.Slice, tip, 0.9f);
                     Holder.Haptic(GameConfig.Instance.haptics.katanaCut);
                 }

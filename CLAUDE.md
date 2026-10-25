@@ -79,7 +79,19 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 - [ ] Enemies form from the floor up with a glowing edge, over a red ring spreading on the floor. Their gun pops in when the edge reaches the hand. After 0.9 s they use the shared `EnemyCrystal` material again (check in the Frame Debugger that enemies batch).
 - [ ] Enemies have a soft dark shadow on the floor. It isn't hidden by the real floor (that's what `_OcclusionBias` 0.08 is for) and is hidden behind real walls.
 - [ ] Bullet streaks fade toward the tail. Enemy streaks are red and up to 1.6 m long, player streaks dark and up to 0.8 m.
-- [ ] Kills: a bright flash at the hit, then two shades of red shards.
+- [ ] Enemy look (STYLE_GUIDE 6): about 1.8 m, broad pointed shoulders, narrow waist, long legs, a long narrow faceless head, block hands. 11 parts plus the floor shadow: about 12 draw calls per enemy (13 with a gun), and they batch (Frame Debugger).
+- [ ] Kills (any: bullet, throw with `killOnThrow`, thrown katana): a short yellow flash at the hit, the hit part and parts close to it burst into 30 to 60 small red shards (tetrahedra and flakes, two reds, some glowing yellow), the other limbs and the torso fall as big chunks with a flat yellow-orange cap where they broke, roll to a stop lying flat, and shrink away after about 4 s of game time. In slow time everything hangs in the air.
+- [ ] Katana: the enemy is cut in half along the swing. Each half has a flat glowing cross-section at the cut, the upper half flies off along the swing, the legs mostly stay, a fan of shards sprays from the cut line, and after about 1.3 s of game time both halves burst into shards. A stab (no sideways swing) shatters instead.
+- [ ] Fist kill: glowing cracks spread from the knuckles over the hit part for about 0.25 s of game time while the enemy trembles, then it shatters. Bullets pass through it while it cracks.
+- [ ] Armed enemies: the gun arm rises slowly while they take aim, then a tell before every shot (they stop walking, a small yellow glint at the muzzle and a click), then the shot. Every shot can be dodged with a step or a lean.
+- [ ] SMG enemies (from level 2, and from wave 4 in endless mode) fire 3-round bursts, all at where your head was when the burst started, with a little spread.
+- [ ] Unarmed enemies walk up (never run), pull the arm back visibly, then punch.
+- [ ] Your bullet passing close to an enemy, or a neighbour dying, makes it raise its arms before its face for about 0.7 s and lose its aim.
+- [ ] Spawns: often just inside a scanned door frame on your floor (as if walking in through the door), otherwise sometimes outside your view. Never closer than 2.5 m at school and 1.8 m at home (1.2 m in tiny rooms), always inside a scanned room.
+- [ ] Levels (`levels.useLevels` on, default): START shows "POZIOM 1" and "GALERIA", then waves ("FALA 2/3", "FALA 3/3"). Clearing the last wave: "STOP." / "KLATKA." twice, "POZIOM 1 ZALICZONY", then level 2 (ULICA), level 3 (HOL). After level 3: "KONIEC", then the menu with "Wszystkie poziomy zaliczone".
+- [ ] Death in a level: one hit gives the red vignette and "TRAFIONY", the world almost stops, the view doesn't move, and about 1.5 s later the level restarts from its first wave (enemies, bullets and debris cleared, new pickups).
+- [ ] With `levels.useLevels` off: the old endless waves (FALA 1, 2, 3...) as before, now with SMG enemies too.
+- [ ] Leaving the scan during a level pauses it (the restart and wave timers wait too).
 - [ ] Getting hit shows a red vignette at the edges of the view, not a flat red quad.
 - [ ] HUD and menu labels are bold with a dark drop shadow, readable over a white room. "STOP." / "KLATKA." pop in.
 - [ ] STYL cycles NORMALNY → BIAŁY → SUPERHOT. Pausing (leaving the scan) always shows plain passthrough.
@@ -106,6 +118,15 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
   - Empty a gun, keep pulling: click plus double haptic tick on every pull. Throw the empty gun at the enemy: it staggers and drops its pistol (catch the pistol in the air).
   - Punch the enemy fast: it shatters. Push it slowly: nothing, or a stagger above 1 m/s.
   - A turret hit vibrates both controllers.
+- [ ] Stage 4 (enemies and death):
+  - The **Y button** cycles the enemy's weapon (title shows it): PISTOLET → PISTOLET MASZYNOWY → STRZELBA → BEZ BRONI, and the enemy comes back at once with it. A left thumbstick click also shows `zabici` (kills).
+  - Pistol and shotgun: the arm rises, then the tell (stop, glint, click), then the shot. SMG: same tell, then a 3-round burst at where your head was; step aside during the tell and all three miss.
+  - Unarmed: it walks up, pulls the arm back, punches; a hit counts `TRAFIONY (n)`.
+  - Shoot it: yellow flash, shards from the hit, limbs fall as chunks with glowing caps and lie on the floor.
+  - Cut it with the katana (diagonal, horizontal, vertical swings): two halves with glowing faces, then shards.
+  - Punch it fast: glowing cracks over the hit part, then the shatter.
+  - Shoot past it without hitting: it guards for a moment.
+  - Stand still right after a kill: shards and chunks hang in the air.
 - [ ] Afterwards: **Stopklatka → Build Settings: Game Scene**.
 
 ## Where to tune (most likely needed on the real device)
@@ -116,7 +137,9 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
   - `combat`: player bullet speed, shooting bullets down (`bulletInterceptRadius`), katana bullet cuts (`katanaCutRadius`), thrown objects (`killOnThrow`, stun/kill/break speeds, `thrownBladeKills`),
   - `weapons`: ammo, cooldowns and spread of the pistol, shotgun and SMG (rounds, rounds per burst, interval between rounds),
   - `haptics`: strength, length and frequency of every vibration (shots, empty click ticks, grab, catch, punch, cut, block, getting hit),
-  - `enemies`: reaction times, how many are armed,
+  - `enemies`: reaction times, how many are armed (endless waves), SMG share, the aim tell (`aimTellSeconds`, `aimLockAngle`, `aimInaccuracy`), enemy SMG bursts (`smgBurstRounds`, `smgBurstInterval`, `smgBurstSpread`), the punch wind-up (`punchWindupSeconds`, `punchStrikeSeconds`, `punchRecoverSeconds`), the guard (`defensivePose`, `guardSeconds`, `guardBulletDistance`, `guardNeighbourDistance`), spawn points (`doorSpawnChance`, `doorSpawnOffset`, `outOfViewChance`, `outOfViewAngle`),
+  - `shatter`: shard count, sizes, colors and lifetimes, which parts turn to dust (`pulverizeRadius`), big chunks (`chunkLifetime`, `chunkPush`, `maxPieces`), the yellow flash, the katana cut (`katanaCutsInHalf`, `cutHalfSeconds`, speeds, shard counts), the punch cracks (`punchCracks`, `crackSeconds`, `crackCount`, `crackLength`),
+  - `levels`: `useLevels` (off = endless waves), `restartDelay` (1.5 s), intro, wave gap, spawn interval, chant repeats, pickups, and the 3 levels with their waves (enemies, alive at once, armed / shotgun / SMG shares, difficulty 1..9),
   - `school` / `home`: per-mode numbers (spawn distances, enemies at once and per wave, enemy speed and bullet speed, how often enemies spawn in your room). The factory defaults are in `Scripts/Core/GameMode.cs`,
   - `performance`: refresh rate (90 or 120), foveation,
   - `debug`: the wrist time gauge and the FPS readout at start.
@@ -124,6 +147,7 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
   - `GunHoldPosition` / `GunHoldEuler`: if guns sit tilted in the hand, fix this first,
   - the katana and throwable hold poses (`CreateKatana`, `CreateThrowable`),
   - `FistPosition` / `FistEuler`: where the black fist sits on the controller (right hand; the left is mirrored). Thumb on top by default.
+- `Scripts/Enemies/EnemyBody.cs`: body proportions (`EnsureMeshes`, rings are height, x radius, z radius, z offset), the guard and punch wind-up poses (`GuardUpperR/ForeR/...`, `WindupUpperR/ForeR`, directions in the chest's frame), the cut-face sizes (`CrossSection`). These are guesses made without a headset.
 - `Scripts/UI/Hud.cs` and `MenuTarget.cs`: text scale. TextMesh sizes are estimates.
 - `Scripts/World/PassthroughStyle.cs`: the BIAŁY (`SetBrightnessContrastSaturation`) and SUPERHOT (gradient color map) looks. Keep them moderate for safety.
 - `Editor/StopklatkaBuilder.cs` → `CreateMaterials`: all colors (lit and shadow tone, rim, highlight, gloss). Re-run Stopklatka → Build Game after changing them.
@@ -137,8 +161,11 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
 - **GameConfig:** if `Resources/GameConfig.asset` is missing, the log says so and code uses the defaults from `GameConfig.cs`. Stopklatka → 4. Create Game Config makes it. Fields added later keep their code defaults in an existing asset.
 - **Dynamic resolution** depends on the OpenXR plugin version (see `OVRManager`). If `renderViewportScale` never changes, set `XRSettings.eyeTextureResolutionScale` directly in `PerformanceManager`.
 - **Door frames:** `EffectMesh.CutHoles = DOOR_FRAME` cuts doorways out of the wall meshes, and the wall colliders are built from those meshes. If bullets still stop in doorways, check in the Scene view that the generated wall `MeshCollider`s have the holes.
-- **Floors:** `RoomService.UpdateFloor` takes the floor height from `MRUK.GetCurrentRoom()` every frame. Stairs are outside every room, so the game pauses there on purpose.
-- **Reveal effect:** during spawn-in the enemy parts use the `EnemyReveal` material (keyword `_REVEAL`) plus a `MaterialPropertyBlock`, which takes them out of the SRP batcher for 0.9 s. If the keyword variant is stripped from the build, enemies appear without the effect; keep the material in `Resources/Materials`.
+- **Floors:** `RoomService.UpdateFloor` takes the floor height from `MRUK.GetCurrentRoom()` every frame (its first `FloorAnchors` entry; the single `FloorAnchor` property is obsolete in MRUK 207 and would warn). Stairs are outside every room, so the game pauses there on purpose.
+- **Reveal effect:** during spawn-in the 11 enemy parts use the `EnemyReveal` material (keyword `_REVEAL`) plus a `MaterialPropertyBlock`, which takes them out of the SRP batcher for 0.9 s. If the keyword variant is stripped from the build, enemies appear without the effect; keep the material in `Resources/Materials`. An enemy killed while forming finishes forming first, so its pieces are whole.
+- **Death effects** (`Enemies/Shatter.cs`, `Debris.cs`, `Cracks.cs`): big chunks are copies of the dead enemy's part meshes in pooled debris (`EnemyCrystal`, batched), and the glowing caps, cut faces, cracks and the kill flash use the new `FractureGlow` material (`Stopklatka/Transparent`, white) with the colors in the meshes' vertex colors (linear values of `#FFD84D` / `#FF9A1F`). If the glow looks washed out or too dark, check the color space (must be Linear) before touching the colors. Glowing shards use the new `ShardGlow` material (`Stopklatka/Crystal`). Chunks move on their own (no Rigidbody): they bounce on the enemy's floor height but pass through real walls; they only fly about a metre. A kill spawns up to about 20 chunk and cap pieces and 60 shards; the pools are created while the scan loads (`Shatter.Prewarm`). Watch `metavr perf` when 3 or more enemies die at once.
+- **Katana cut plane** = blade direction × swing direction. Each body part goes whole to one side, so the cut always falls between parts (neck, waist, hips, shoulders, knees); the glowing face is placed where that half's parts end. Very vertical cuts get a tall face down the body. If faces float away from the halves, tune `EnemyBody.CrossSection` or switch the cut off (`shatter.katanaCutsInHalf`).
+- **Door spawns** use `MRUKRoom.Anchors` with the `DOOR_FRAME` label. Both sides of each frame are tried and only a side inside a scanned room, on your floor, at the allowed distance and connected by the NavMesh is used, so the frame's facing direction doesn't matter. Without door frames in the scan, spawns fall back to random floor spots.
 - **Boundary suppression** works only while the passthrough layer is active. `PassthroughStyle.Update` keeps it in sync.
 - **Shader errors** in `Shaders/*.shader` (URP HLSL with Meta's occlusion include) show up as pink materials. Fix the shaders before anything else.
 - **Fist and hand poses** (`Factory.FistPosition/FistEuler`, hold poses) are guesses made without a headset. If the fist doesn't sit over the real hand, or punches register too easily while walking (hand speed includes walking), tune the pose and `player.punchKillSpeed` / `punchStunSpeed` first.

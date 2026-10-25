@@ -13,7 +13,10 @@ namespace Stopklatka
     ///   - weapons and throwables float within reach in an arc: pistol, SMG, shotgun, katana,
     ///     bottle, mug, ashtray, block,
     ///   - the X button lobs a pistol in an arc toward your right hand (game time, so you can
-    ///     catch it in slow motion: hold the right grip and let it fly into your hand).
+    ///     catch it in slow motion: hold the right grip and let it fly into your hand),
+    ///   - the Y button changes the enemy's weapon (pistol, SMG, shotgun, none) and brings it back at
+    ///     once: for the aim tell, SMG bursts, the punch wind-up, and as a target for shattering,
+    ///     katana cuts and punch cracks (stage 4).
     /// The turret's bullets are targets for shooting bullets down and cutting them with the katana.
     /// Hits are only counted. The left menu button puts everything in front of you again;
     /// a left thumbstick click shows the counters.
@@ -48,7 +51,11 @@ namespace Stopklatka
         Enemy _enemy;
         Vector3 _origin, _forward, _right;
         float _nextShot, _respawnAt = -1f;
-        int _hits, _shots, _lobs;
+        int _hits, _shots, _lobs, _kills, _weaponIndex;
+
+        // Y cycles these; null = unarmed (walks up and punches)
+        static readonly GunKind?[] EnemyWeapons = { GunKind.Pistol, GunKind.Smg, GunKind.Shotgun, null };
+        static readonly string[] EnemyWeaponNames = { "PISTOLET", "PISTOLET MASZYNOWY", "STRZELBA", "BEZ BRONI" };
         bool _ready, _enemyUp;
 
         void Awake()
@@ -71,6 +78,7 @@ namespace Stopklatka
         {
             PlayerHealth.Instance.Hit += OnHit;
             TimeController.Instance.SetMode(TimeController.Mode.Normal);
+            Shatter.Prewarm();
             Hud.Instance.Title("TEST CZASU", 0f, Color.white);
             Hud.Instance.Sub("Stań prosto i patrz przed siebie.\nPotrzebujesz kilku metrów wolnego miejsca.", 0f);
             // give tracking a moment, so "in front of you" really is in front of you
@@ -79,6 +87,7 @@ namespace Stopklatka
             Hud.Instance.Title("TEST CZASU", 2.5f, Color.white, pulse: true);
             Hud.Instance.Sub("Stój: czas prawie staje. Ruszaj się: czas płynie.\nStrzał, rzut, chwyt: krótki impuls.\n" +
                              "X: rzut pistoletu do prawej ręki (trzymaj grip, żeby złapać).\n" +
+                             "Y: zmiana broni przeciwnika (pistolet, seria, strzelba, bez broni).\n" +
                              "Lewy kontroler: przycisk menu ustawia wszystko od nowa,\nkliknięcie gałki pokazuje liczniki.", 12f);
             _ready = true;
         }
@@ -88,7 +97,7 @@ namespace Stopklatka
             var perf = PerformanceManager.Instance;
             var time = TimeController.Instance;
             if (perf != null && perf.ShowReadout && time != null)
-                Hud.Instance.Perf($"{perf.Readout()}\nruch {time.Motion:F2}  cel x{time.Target:F2}\ntrafienia {_hits}  strzały {_shots}  rzuty X {_lobs}");
+                Hud.Instance.Perf($"{perf.Readout()}\nruch {time.Motion:F2}  cel x{time.Target:F2}\ntrafienia {_hits}  strzały {_shots}  rzuty X {_lobs}  zabici {_kills}");
             else Hud.Instance.Perf("");
 
             if (!_ready) return;
@@ -99,6 +108,8 @@ namespace Stopklatka
             }
             // Button.One on the left controller is X
             if (OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch)) LobPistol();
+            // Button.Two on the left controller is Y
+            if (OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.LTouch)) CycleEnemyWeapon();
 
             UpdateTurret();
             if (_pendulum != null)
@@ -244,6 +255,7 @@ namespace Stopklatka
             {
                 _enemyUp = false;
                 _enemy = null;
+                _kills++;
                 _respawnAt = Time.unscaledTime + EnemyRespawnSeconds;
             }
             if (_enemyUp || _respawnAt < 0f || Time.unscaledTime < _respawnAt) return;
@@ -251,8 +263,20 @@ namespace Stopklatka
             _respawnAt = -1f;
             var pos = _origin + _forward * EnemyDistance + _right * 1.6f;
             var face = Quaternion.LookRotation(Vector3.ProjectOnPlane(_origin - pos, Vector3.up), Vector3.up);
-            _enemy = Factory.CreateEnemy(pos, face, 1, GunKind.Pistol);
+            _enemy = Factory.CreateEnemy(pos, face, 1, EnemyWeapons[_weaponIndex]);
             _enemyUp = true;
+        }
+
+        /// <summary>Y button: the next weapon for the test enemy, which comes back with it at once.</summary>
+        void CycleEnemyWeapon()
+        {
+            _weaponIndex = (_weaponIndex + 1) % EnemyWeapons.Length;
+            if (_enemyUp && _enemy != null) _enemy.Despawn();
+            _enemy = null;
+            _enemyUp = false;
+            if (SpawnEnemy) _respawnAt = Time.unscaledTime;
+            Hud.Instance.Title(EnemyWeaponNames[_weaponIndex], 1.5f, Color.white, pulse: true);
+            Hud.Instance.Sub("Przeciwnik: " + EnemyWeaponNames[_weaponIndex].ToLowerInvariant(), 2f);
         }
 
         /// <summary>

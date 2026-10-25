@@ -108,6 +108,93 @@ namespace Stopklatka
                 for (int i = 0; i < f.Length; i += 3) Tri(p[f[i]], p[f[i + 1]], p[f[i + 2]], center);
             }
 
+            /// <summary>
+            /// A faceted solid through horizontal rings (body parts: chest wedge, hips, the long head).
+            /// Each ring is (height, x radius, z radius, z offset) around origin; a ring with zero radii
+            /// is a point (an apex). Every face is turned outward from the axis at its own height, so the
+            /// shape may widen and narrow freely along its length. Ends are closed.
+            /// </summary>
+            /// <param name="angleOffset">Degrees; 0 puts corners at the sides (+x/-x) and a flat face at the front.</param>
+            public void Loft(Vector3 origin, Vector4[] rings, int sides, float angleOffset = 0f, float jitter = 0f, System.Random rng = null)
+            {
+                if (rings.Length < 2 || sides < 3) return;
+                var pts = new Vector3[rings.Length, sides];
+                for (int r = 0; r < rings.Length; r++)
+                {
+                    var ring = rings[r];
+                    for (int i = 0; i < sides; i++)
+                    {
+                        float ang = (angleOffset + i * 360f / sides) * Mathf.Deg2Rad;
+                        var p = new Vector3(Mathf.Cos(ang) * ring.y, ring.x, ring.w + Mathf.Sin(ang) * ring.z);
+                        bool apex = ring.y <= 0f && ring.z <= 0f;
+                        if (!apex && jitter > 0f && rng != null) p += Jitter(rng, jitter);
+                        pts[r, i] = origin + p;
+                    }
+                }
+                for (int r = 0; r < rings.Length - 1; r++)
+                {
+                    var a = rings[r];
+                    var b = rings[r + 1];
+                    var axis = origin + new Vector3(0f, (a.x + b.x) * 0.5f, (a.w + b.w) * 0.5f);
+                    for (int i = 0; i < sides; i++)
+                    {
+                        int j = (i + 1) % sides;
+                        Quad(pts[r, i], pts[r, j], pts[r + 1, j], pts[r + 1, i], axis);
+                    }
+                }
+                // end caps, turned away from a point just inside each end
+                var first = rings[0];
+                var last = rings[rings.Length - 1];
+                float inward = Mathf.Sign(rings[1].x - first.x) * 0.01f;
+                var bottom = origin + new Vector3(0f, first.x, first.w);
+                var top = origin + new Vector3(0f, last.x, last.w);
+                for (int i = 0; i < sides; i++)
+                {
+                    int j = (i + 1) % sides;
+                    Tri(bottom, pts[0, i], pts[0, j], bottom + Vector3.up * inward);
+                    Tri(top, pts[rings.Length - 1, j], pts[rings.Length - 1, i], top - Vector3.up * inward);
+                }
+            }
+
+            /// <summary>Irregular tetrahedron (4 facets): a sharp shard.</summary>
+            public void Tetra(Vector3 center, float radius, float jitter = 0f, System.Random rng = null)
+            {
+                var p = new[]
+                {
+                    new Vector3(1f, 1f, 1f), new Vector3(1f, -1f, -1f), new Vector3(-1f, 1f, -1f), new Vector3(-1f, -1f, 1f),
+                };
+                for (int i = 0; i < 4; i++)
+                {
+                    var q = p[i] * (radius * 0.577f);
+                    if (jitter > 0f && rng != null) q += Jitter(rng, jitter * radius);
+                    p[i] = center + q;
+                }
+                Tri(p[0], p[1], p[2], center);
+                Tri(p[0], p[1], p[3], center);
+                Tri(p[0], p[2], p[3], center);
+                Tri(p[1], p[2], p[3], center);
+            }
+
+            /// <summary>Thin triangular plate (a flake): a triangle of the given size, extruded by thickness.</summary>
+            public void Plate(Vector3 center, float size, float thickness, System.Random rng = null)
+            {
+                var c = new Vector3[3];
+                for (int i = 0; i < 3; i++)
+                {
+                    float ang = i * Mathf.PI * 2f / 3f + (rng != null ? (float)(rng.NextDouble() - 0.5) * 0.9f : 0f);
+                    float r = size * 0.5f * (rng != null ? 0.7f + (float)rng.NextDouble() * 0.6f : 1f);
+                    c[i] = new Vector3(Mathf.Cos(ang) * r, 0f, Mathf.Sin(ang) * r);
+                }
+                var h = Vector3.up * (thickness * 0.5f);
+                Tri(center + c[0] + h, center + c[1] + h, center + c[2] + h, center);
+                Tri(center + c[0] - h, center + c[1] - h, center + c[2] - h, center);
+                for (int i = 0; i < 3; i++)
+                {
+                    int j = (i + 1) % 3;
+                    Quad(center + c[i] - h, center + c[j] - h, center + c[j] + h, center + c[i] + h, center);
+                }
+            }
+
             /// <summary>Double pyramid (octahedron), used for the start target.</summary>
             public void Octahedron(Vector3 center, float radius, float height)
             {

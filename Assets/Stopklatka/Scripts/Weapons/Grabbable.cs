@@ -174,7 +174,7 @@ namespace Stopklatka
             var enemy = c.collider.GetComponentInParent<Enemy>();
             if (enemy != null && Time.time <= _thrownUntil && speed >= Tuning.ThrowStunSpeed)
             {
-                if (KillsOnImpact(speed)) enemy.Kill(point, Body.linearVelocity.normalized);
+                if (KillsOnImpact(speed)) enemy.Kill(point, Body.linearVelocity.normalized, Enemy.KillKind.Thrown);
                 else enemy.Stun(point);
                 _thrownUntil = 0f;
             }

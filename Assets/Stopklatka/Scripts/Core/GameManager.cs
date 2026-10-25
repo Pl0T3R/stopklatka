@@ -5,14 +5,16 @@ using UnityEngine;
 namespace Stopklatka
 {
     /// <summary>
-    /// Game flow: load the scan, menu (floating crystals), waves of enemies, "STOP. KLATKA." when a
-    /// wave is cleared, restart of the wave when you get hit. Pauses with plain passthrough if you
-    /// walk out of the scanned area.
+    /// Game flow: load the scan, menu (floating crystals), pause with plain passthrough if you walk
+    /// out of the scanned area. START hands the playing loop to <see cref="LevelManager"/> (3 levels
+    /// of waves, GameConfig levels). With levels.useLevels off, the old endless waves run here:
+    /// "STOP. KLATKA." when a wave is cleared, restart of the wave when you get hit.
     /// </summary>
     [DefaultExecutionOrder(-30)]
     public class GameManager : MonoBehaviour
     {
-        public enum State { Booting, Menu, Playing, WaveCleared, Dead }
+        /// <summary>Playing, WaveCleared and Dead are the endless waves; Level means LevelManager runs the game.</summary>
+        public enum State { Booting, Menu, Playing, WaveCleared, Dead, Level }
 
         public static GameManager Instance { get; private set; }
 
@@ -25,7 +27,7 @@ namespace Stopklatka
 
         readonly List<MenuTarget> _menuTargets = new();
         int _toSpawn;
-        string _menuText = "", _menuProblem;
+        string _menuText = "", _menuProblem, _menuNote;
         Vector3 _menuOrigin, _menuRight = Vector3.right;
         float _nextSpawnAt, _outside, _inside;
         Coroutine _flow;
@@ -34,8 +36,9 @@ namespace Stopklatka
         {
             Instance = this;
             Layers.ConfigureCollisions();
-            // scenes built before PlayerHealth existed get it here
+            // scenes built before PlayerHealth / LevelManager existed get them here
             if (GetComponent<PlayerHealth>() == null) gameObject.AddComponent<PlayerHealth>();
+            if (GetComponent<LevelManager>() == null) gameObject.AddComponent<LevelManager>();
         }
 
         void OnDestroy()
@@ -50,6 +53,7 @@ namespace Stopklatka
             yield return null;
             Hud.Instance.Title("STOPKLATKA", 0f, Color.white);
             Hud.Instance.Sub("Wczytuję skan pomieszczeń…", 0f);
+            Shatter.Prewarm();   // pools for shards, debris, cracks and flashes, while the scan loads
             float until = Time.realtimeSinceStartup + 15f;
             while (RoomService.Instance != null && !RoomService.Instance.Ready && Time.realtimeSinceStartup < until) yield return null;
             var problem = RoomService.Instance != null ? RoomService.Instance.Problem : null;
@@ -94,6 +98,7 @@ namespace Stopklatka
         void EnterMenu(string problem)
         {
             StopFlow();
+            if (LevelManager.Instance != null) LevelManager.Instance.Stop();
             ClearMenuTargets();
             Current = State.Menu;
             TimeController.Instance.SetMode(TimeController.Mode.Normal);
@@ -108,7 +113,7 @@ namespace Stopklatka
 
             _menuOrigin = basePos;
             _menuRight = right;
-            _menuTargets.Add(Factory.CreateMenuTarget("START", basePos, Mats.Target, 0.22f, () => StartWave(1)));
+            _menuTargets.Add(Factory.CreateMenuTarget("START", basePos, Mats.Target, 0.22f, StartGame));
             SpawnStyleTarget();
             SpawnModeTarget();
 
@@ -128,8 +133,34 @@ namespace Stopklatka
             _menuText = string.IsNullOrEmpty(_menuProblem)
                 ? $"Tryb: {GameMode.Profile.Label}. Czas płynie tylko, kiedy się ruszasz.\nWeź pistolet (grip) i strzel w czerwony kryształ (spust)."
                 : _menuProblem + "\nMożesz grać wokół siebie: strzel w czerwony kryształ.";
+            if (!string.IsNullOrEmpty(_menuNote)) _menuText = _menuNote + "\n" + _menuText;
             Hud.Instance.Title("STOPKLATKA", 0f, Color.white);
             Hud.Instance.Sub(_menuText, 0f);
+        }
+
+        /// <summary>Back to the menu with a line on top of the menu text (e.g. after the last level).</summary>
+        public void ReturnToMenu(string note)
+        {
+            EnterMenu(_menuProblem);
+            _menuNote = note;
+            ShowMenuText();
+        }
+
+        /// <summary>START: the levels (GameConfig levels.useLevels), or the old endless waves.</summary>
+        void StartGame()
+        {
+            _menuNote = null;
+            var levels = LevelManager.Instance;
+            if (Tuning.Levels.useLevels && levels != null && LevelManager.LevelCount > 0) levels.StartLevel(1);
+            else StartWave(1);
+        }
+
+        /// <summary>LevelManager takes over the playing loop.</summary>
+        public void BeginLevelPlay()
+        {
+            StopFlow();
+            ClearMenuTargets();
+            Current = State.Level;
         }
 
         // Toggle crystals shatter when used, so each press spawns a fresh one in the same spot.
@@ -154,9 +185,11 @@ namespace Stopklatka
             }));
         }
 
+        /// <summary>The old endless waves (GameConfig levels.useLevels off).</summary>
         public void StartWave(int wave)
         {
             StopFlow();
+            if (LevelManager.Instance != null) LevelManager.Instance.Stop();
             ClearMenuTargets();
             ClearWorld(keepHeld: true);
             Current = State.Playing;
@@ -164,7 +197,7 @@ namespace Stopklatka
             _toSpawn = Tuning.EnemiesInWave(wave);
             _nextSpawnAt = Time.time + 1.2f;
             TimeController.Instance.SetMode(TimeController.Mode.MotionDriven);
-            SpawnPickups();
+            SpawnPickups(1 + wave / 3);
             Hud.Instance.Title($"FALA {wave}", 2f, Red, pulse: true);
             Hud.Instance.Sub(wave == 1 ? "Stój spokojnie, a czas prawie stanie." : "", 3f);
         }
@@ -212,7 +245,8 @@ namespace Stopklatka
             }
             else
             {
-                TimeController.Instance.SetMode(Current == State.Playing ? TimeController.Mode.MotionDriven : TimeController.Mode.Normal);
+                if (Current == State.Level && LevelManager.Instance != null) LevelManager.Instance.ApplyTimeMode();
+                else TimeController.Instance.SetMode(Current == State.Playing ? TimeController.Mode.MotionDriven : TimeController.Mode.Normal);
                 Hud.Instance.Clear();
                 if (Current == State.Menu) ShowMenuText();
             }
@@ -220,19 +254,11 @@ namespace Stopklatka
 
         // --- spawning -------------------------------------------------------------
 
-        bool TrySpawnEnemy()
-        {
-            var rig = PlayerRig.Instance;
-            if (!RoomService.Instance.TryFindEnemySpawn(rig.FloorPosition, out var pos)) return false;
-            var face = Quaternion.LookRotation(Flat(rig.FloorPosition - pos), Vector3.up);
-            GunKind? gun = null;
-            if (Random.value < Tuning.ArmedChance(Wave))
-                gun = Random.value < Tuning.ShotgunChance(Wave) ? GunKind.Shotgun : GunKind.Pistol;
-            Factory.CreateEnemy(pos, face, Wave, gun);
-            return true;
-        }
+        bool TrySpawnEnemy() =>
+            EnemySpawner.TrySpawn(Wave, Tuning.ArmedChance(Wave), Tuning.ShotgunChance(Wave), Tuning.SmgChance(Wave));
 
-        void SpawnPickups()
+        /// <summary>A pistol near you if your hands hold no gun, plus a few weapons and throwables around.</summary>
+        public void SpawnPickups(int extras)
         {
             var rig = PlayerRig.Instance;
             var rooms = RoomService.Instance;
@@ -241,7 +267,6 @@ namespace Stopklatka
                 var gun = Factory.CreateGun(GunKind.Pistol, rooms.FindPickupSpot(rig.FloorPosition, 2.5f), Random.rotation);
                 gun.Body.linearVelocity = Vector3.zero;
             }
-            int extras = 1 + Wave / 3;
             for (int i = 0; i < extras; i++)
             {
                 var spot = rooms.FindPickupSpot(rig.FloorPosition);
@@ -259,12 +284,12 @@ namespace Stopklatka
 
         // --- helpers --------------------------------------------------------------
 
-        void ClearWorld(bool keepHeld)
+        /// <summary>Removes enemies, bullets, debris and loose items (keepHeld: not what you hold).</summary>
+        public void ClearWorld(bool keepHeld)
         {
             foreach (var e in new List<Enemy>(Enemy.Alive)) e.Despawn();
             BulletSystem.ClearAll();
-            ShardSystem.ClearAll();
-            Effects.ClearAll();
+            Effects.ClearAll();   // shards, debris, cracks and flashes
             foreach (var g in new List<Grabbable>(Grabbable.All))
             {
                 if (keepHeld && g.Holder != null) continue;

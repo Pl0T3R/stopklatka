@@ -35,12 +35,13 @@ namespace Stopklatka
             var root = new GameObject("Enemy") { layer = Layers.Enemy };
             root.transform.SetPositionAndRotation(position, rotation);
 
+            // body capsule (broad shoulders: a bit wider than the waist) and the long head
             var capsule = root.AddComponent<CapsuleCollider>();
-            capsule.center = new Vector3(0f, 0.86f, 0f);
-            capsule.height = 1.72f;
-            capsule.radius = 0.2f;
+            capsule.center = new Vector3(0f, 0.85f, 0f);
+            capsule.height = 1.7f;
+            capsule.radius = 0.22f;
             var head = root.AddComponent<SphereCollider>();
-            head.center = new Vector3(0f, 1.65f, 0.01f);
+            head.center = new Vector3(0f, 1.66f, 0.01f);
             head.radius = 0.13f;
             var rb = root.AddComponent<Rigidbody>();
             rb.isKinematic = true;

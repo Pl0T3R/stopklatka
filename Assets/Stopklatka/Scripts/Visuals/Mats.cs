@@ -24,6 +24,8 @@ namespace Stopklatka
         public const string RingFx = "SpawnRing";
         public const string Text = "HudText";
         public const string Hidden = "Hidden";
+        public const string Glow = "FractureGlow";             // fracture caps, cut faces, cracks, kill flash (vertex colors)
+        public const string GlowShard = "ShardGlow";           // glowing yellow-orange shards (broken crystal core)
 
         static readonly Dictionary<string, Material> Cache = new();
 
@@ -42,7 +44,7 @@ namespace Stopklatka
 
         static Material CreateFallback(string name)
         {
-            bool transparent = name is EnemyTrail or PlayerTrail or Flash or RedFlash or FloorShadow or RingFx or Hidden;
+            bool transparent = name is EnemyTrail or PlayerTrail or Flash or RedFlash or FloorShadow or RingFx or Hidden or Glow;
             bool text = name == Text;
             var shader = Shader.Find(text ? "Stopklatka/Text" : transparent ? "Stopklatka/Transparent" : "Stopklatka/Crystal");
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
@@ -62,10 +64,13 @@ namespace Stopklatka
                 FloorShadow => new Color(0.04f, 0.04f, 0.06f, 0.42f),
                 RingFx => new Color(1f, 0.12f, 0.08f, 0.85f),
                 Hidden => new Color(0f, 0f, 0f, 0f),
+                Glow => Color.white,                              // the meshes carry #FFD84D..#FF9A1F as vertex colors
+                GlowShard => new Color(1f, 0.847f, 0.302f),       // #FFD84D
                 _ => Color.white,
             };
             m.SetColor("_BaseColor", color);
-            if (!transparent && !text) m.SetColor("_ShadowColor", color * 0.5f);
+            if (!transparent && !text) m.SetColor("_ShadowColor", name == GlowShard ? new Color(1f, 0.604f, 0.122f) : color * 0.5f);
+            if (name == GlowShard) m.SetFloat("_Emission", 0.45f);
             if (name is FloorShadow or RingFx) m.SetFloat("_OcclusionBias", 0.08f);
             if (name == EnemyReveal) m.EnableKeyword("_REVEAL");
             return m;

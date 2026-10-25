@@ -14,6 +14,9 @@ namespace Stopklatka
 
         public IReadOnlyList<T> Active => _active;
 
+        /// <summary>Parent of every pooled item. Items that were parented elsewhere go back here on release.</summary>
+        public Transform Root => _root;
+
         public Pool(string name, Func<T> create, int prewarm = 0)
         {
             _create = create;

@@ -5,38 +5,59 @@ using UnityEngine.AI;
 namespace Stopklatka
 {
     /// <summary>
-    /// A red crystal enemy. Armed ones keep their distance and shoot when they can see you
-    /// (real walls block their view and their bullets). Unarmed ones walk up and punch.
-    /// Everything runs in game time, so they freeze when you stand still.
+    /// A red crystal enemy (GAME_SPEC 4). Armed ones approach to a comfortable range and shoot when
+    /// they can see you (real walls block their view and their bullets): the arm visibly rises while
+    /// they take aim, then a short tell (they stop, the arm locks, the muzzle glints) before every
+    /// shot, with a slight spread so you can dodge. SMG enemies fire short bursts at where your head
+    /// was when the burst started. Unarmed ones walk up and punch after a visible wind-up.
+    /// A bullet passing close or a neighbour dying makes them guard for a moment.
+    /// Everything runs in game time, so they freeze when you stand still. Walking speeds stay at the
+    /// per-mode values (no running enemies in a real room).
+    /// One hit kills: bullets and throws shatter them, the katana cuts them in half, the fist cracks
+    /// them open first (see <see cref="Shatter"/> and <see cref="Cracks"/>).
     /// </summary>
     public class Enemy : MonoBehaviour
     {
         public static readonly List<Enemy> Alive = new();
 
-        enum State { Appearing, Moving, Punching, Stunned, Dead }
+        public enum KillKind { Bullet, Punch, Blade, Thrown }
+
+        enum State { Appearing, Moving, Punching, Stunned, Dying, Dead }
+        /// <summary>An armed enemy's shot cycle.</summary>
+        enum Aim { Idle, Raising, Tell, Firing }
 
         public Gun Gun { get; private set; }
 
         NavMeshAgent _agent;
         EnemyBody _body;
+        Collider[] _colliders;
         State _state;
-        float _stateTime, _reaction, _nextFire, _repathAt, _reactionTime, _fireInterval;
-        bool _useAgent, _revealing;
-        Vector3 _lastPos, _velocity, _manualTarget;
+        Aim _aim;
+        float _stateTime, _aimTime, _reaction, _reactionTime, _fireInterval, _nextFire, _repathAt, _nextRound;
+        float _guardUntil = -1f;
+        int _burstLeft;
+        bool _useAgent, _revealing, _punchLanded;
+        Vector3 _lastPos, _velocity, _manualTarget, _burstTarget, _deathPoint, _deathDir;
         Renderer[] _gunRenderers;
 
-        const float EyeHeight = 1.6f;
+        const float EyeHeight = 1.62f;
+        const float ChestHeight = 1.3f;
         const float AppearSeconds = 0.9f;
         const float RevealHeight = 1.9f;
+
+        /// <summary>Height of the floor the enemy stands on (where its debris lands).</summary>
+        float FloorY => transform.position.y;
 
         public void Init(EnemyBody body, NavMeshAgent agent, Gun gun, int wave, int agentTypeId, bool navReady)
         {
             _body = body;
             _agent = agent;
+            _colliders = GetComponents<Collider>();
             _reactionTime = Tuning.ReactionTime(wave) * Random.Range(0.85f, 1.25f);
             _fireInterval = Tuning.FireInterval(wave);
             _reaction = _reactionTime;
             _nextFire = Time.time + 1.5f;
+            _body.AimBlend = 0f;
             if (gun != null)
             {
                 Gun = gun;
@@ -79,11 +100,27 @@ namespace Stopklatka
             if (dt <= 0f || _state == State.Dead) return;
             _stateTime += dt;
 
+            if (_state == State.Dying)
+            {
+                // cracked by a punch: trembles while the cracks spread, then shatters
+                _body.Wobble = 1f;
+                _body.Animate(dt, Vector3.zero);
+                if (_stateTime >= Tuning.Shatter.crackSeconds)
+                {
+                    _state = State.Dead;
+                    Shatter.Break(_body, _deathPoint, _deathDir, FloorY);
+                    Destroy(gameObject);
+                }
+                return;
+            }
+
             var rig = PlayerRig.Instance;
             var head = rig.Head.position;
             var playerFloor = rig.FloorPosition;
             var toPlayer = Vector3.ProjectOnPlane(head - transform.position, Vector3.up);
             float dist = toPlayer.magnitude;
+            bool guarding = Time.time < _guardUntil;
+            _body.Guard = Mathf.MoveTowards(_body.Guard, guarding ? 1f : 0f, dt / 0.15f);
 
             switch (_state)
             {
@@ -95,19 +132,14 @@ namespace Stopklatka
                     break;
 
                 case State.Moving:
-                    UpdateMovement(playerFloor, toPlayer, dist, dt);
-                    if (Gun != null) UpdateShooting(head, dist, dt);
-                    else if (dist < Tuning.EnemyPunchRange) Enter(State.Punching);
+                    bool planted = guarding || _aim == Aim.Tell || _aim == Aim.Firing;
+                    UpdateMovement(playerFloor, toPlayer, dist, dt, planted);
+                    if (Gun != null) UpdateShooting(head, dist, dt, guarding);
+                    else if (!guarding && dist < Tuning.EnemyPunchRange) { Enter(State.Punching); _punchLanded = false; }
                     break;
 
                 case State.Punching:
-                    Stop();
-                    FaceToward(toPlayer, dt, 10f);
-                    _body.PunchTarget = head;
-                    _body.Punch = _stateTime < 0.55f ? Mathf.SmoothStep(0f, 0.3f, _stateTime / 0.55f) : Mathf.Clamp01((_stateTime - 0.55f) / 0.12f);
-                    if (_stateTime >= 0.67f && _stateTime - dt < 0.67f && dist < Tuning.EnemyPunchRange + 0.2f)
-                        PlayerHealth.Instance?.TakeHit(head);
-                    if (_stateTime >= 1.1f) { _body.Punch = 0f; Enter(State.Moving); }
+                    UpdatePunch(head, toPlayer, dist, dt);
                     break;
 
                 case State.Stunned:
@@ -151,8 +183,19 @@ namespace Stopklatka
             _stateTime = 0f;
         }
 
-        void UpdateMovement(Vector3 playerFloor, Vector3 toPlayer, float dist, float dt)
+        // --- movement -----------------------------------------------------------------
+
+        void UpdateMovement(Vector3 playerFloor, Vector3 toPlayer, float dist, float dt, bool planted)
         {
+            if (planted)
+            {
+                // taking the shot or guarding: stand still, keep facing you
+                Stop();
+                _repathAt = 0f;
+                FaceToward(toPlayer, dt, 8f);
+                return;
+            }
+
             Vector3 target;
             if (Gun != null)
             {
@@ -188,30 +231,148 @@ namespace Stopklatka
                 }
             }
 
-            bool seesPlayer = Gun != null && _reaction < _reactionTime;
+            bool seesPlayer = Gun != null && _aim != Aim.Idle;
             var look = seesPlayer || dist < 3f ? toPlayer : Vector3.ProjectOnPlane(_velocity, Vector3.up);
             FaceToward(look.sqrMagnitude > 1e-4f ? look : toPlayer, dt, 6f);
         }
 
-        void UpdateShooting(Vector3 head, float dist, float dt)
+        // --- shooting ------------------------------------------------------------------
+
+        /// <summary>
+        /// See you -> the arm rises over the reaction time -> it lines up -> tell (stop, glint) ->
+        /// shot or burst -> wait for the next shot (each one gets its own tell).
+        /// </summary>
+        void UpdateShooting(Vector3 head, float dist, float dt, bool guarding)
         {
+            if (guarding)
+            {
+                if (_aim == Aim.Tell || _aim == Aim.Firing) LoseAim();
+                _body.AimBlend = Mathf.MoveTowards(_body.AimBlend, 0f, dt * 3f);
+                return;
+            }
+            if (_aim == Aim.Firing)
+            {
+                UpdateBurst();
+                return;
+            }
+
             var eye = transform.position + Vector3.up * EyeHeight;
             bool canSee = dist < Tuning.EnemySightRange &&
                           !Physics.Linecast(eye, head, Layers.RoomMask, QueryTriggerInteraction.Ignore);
             if (!canSee)
             {
+                _aim = Aim.Idle;
                 _reaction = _reactionTime;
                 _body.AimTarget = null;
+                _body.AimBlend = 0f;
                 return;
             }
+
             _body.AimTarget = head;
-            _reaction -= dt;
-            if (_reaction > 0f || Time.time < _nextFire) return;
-            // the arm needs a moment to line up before the shot
-            if (Vector3.Angle(Gun.Muzzle.forward, head - Gun.Muzzle.position) > 12f) return;
-            Gun.FireAsEnemy(this, head + Random.insideUnitSphere * 0.05f, 1.6f);
+            if (_aim == Aim.Idle) _aim = Aim.Raising;
+
+            if (_aim == Aim.Raising)
+            {
+                _reaction -= dt;
+                _body.AimBlend = Mathf.SmoothStep(0f, 1f, 1f - Mathf.Clamp01(_reaction / Mathf.Max(0.01f, _reactionTime)));
+                if (_reaction > 0f || Time.time < _nextFire) return;
+                if (Vector3.Angle(Gun.Muzzle.forward, head - Gun.Muzzle.position) > Tuning.AimLockAngle) return;
+                // the tell: a glint and a click, then the enemy holds still for a moment
+                _aim = Aim.Tell;
+                _aimTime = 0f;
+                Effects.AimGlint(Gun.Muzzle.position, Gun.Muzzle.forward);
+                SoundBank.Instance?.Play(Sfx.Empty, Gun.Muzzle.position, 0.5f, 0.7f);
+                return;
+            }
+
+            // Tell
+            _body.AimBlend = 1f;
+            _aimTime += dt;
+            if (_aimTime < Tuning.AimTellSeconds) return;
+            if (Gun.Kind == GunKind.Smg)
+            {
+                _aim = Aim.Firing;
+                _burstLeft = Tuning.EnemySmgBurstRounds;
+                _burstTarget = head;
+                _nextRound = Time.time;
+                UpdateBurst();
+            }
+            else
+            {
+                Gun.FireAsEnemy(this, head + Random.insideUnitSphere * 0.05f, Tuning.AimInaccuracy);
+                EndShot();
+            }
+        }
+
+        /// <summary>One round of an SMG burst per interval, all at where your head was when it started.</summary>
+        void UpdateBurst()
+        {
+            _body.AimTarget = _burstTarget;
+            _body.AimBlend = 1f;
+            if (_burstLeft > 0 && Time.time >= _nextRound)
+            {
+                Gun.FireAsEnemy(this, _burstTarget, Tuning.AimInaccuracy + Tuning.EnemySmgBurstSpread);
+                _burstLeft--;
+                _nextRound += Tuning.EnemySmgBurstInterval;
+            }
+            if (_burstLeft <= 0) EndShot();
+        }
+
+        void EndShot()
+        {
+            _aim = Aim.Raising;   // the arm stays up; the next shot needs its own tell
+            _burstLeft = 0;
             _nextFire = Time.time + _fireInterval * Random.Range(0.8f, 1.25f);
         }
+
+        /// <summary>Flinched mid-shot: the arm drops a little and the aim takes a while again.</summary>
+        void LoseAim()
+        {
+            _aim = Aim.Raising;
+            _burstLeft = 0;
+            _reaction = Mathf.Max(_reaction, _reactionTime * 0.5f);
+        }
+
+        // --- punching ------------------------------------------------------------------
+
+        void UpdatePunch(Vector3 head, Vector3 toPlayer, float dist, float dt)
+        {
+            Stop();
+            FaceToward(toPlayer, dt, 10f);
+            _body.PunchTarget = head;
+            float w = Tuning.PunchWindupSeconds, s = Tuning.PunchStrikeSeconds, r = Tuning.PunchRecoverSeconds;
+            float t = _stateTime;
+            if (t < w)
+            {
+                _body.Windup = Mathf.SmoothStep(0f, 1f, t / w);
+                _body.Punch = 0f;
+            }
+            else if (t < w + s)
+            {
+                float k = (t - w) / s;
+                _body.Windup = 1f - k;
+                _body.Punch = k;
+            }
+            else
+            {
+                _body.Windup = 0f;
+                _body.Punch = 1f - Mathf.SmoothStep(0f, 1f, (t - w - s) / r);
+            }
+
+            if (!_punchLanded && t >= w + s)
+            {
+                _punchLanded = true;
+                if (dist < Tuning.EnemyPunchRange + 0.2f) PlayerHealth.Instance?.TakeHit(head);
+            }
+            if (t >= w + s + r)
+            {
+                _body.Punch = 0f;
+                _body.Windup = 0f;
+                Enter(State.Moving);
+            }
+        }
+
+        // --- helpers -------------------------------------------------------------------
 
         void FaceToward(Vector3 dir, float dt, float rate)
         {
@@ -223,7 +384,7 @@ namespace Stopklatka
 
         void Stop()
         {
-            if (_useAgent && _agent.isOnNavMesh) _agent.isStopped = true;
+            if (_useAgent && _agent.enabled && _agent.isOnNavMesh) _agent.isStopped = true;
         }
 
         void DropGun(Vector3 velocity)
@@ -232,37 +393,114 @@ namespace Stopklatka
             SetGunVisible(true);
             _gunRenderers = null;
             // the weapon starts inside this body: don't let it get shoved out sideways, so it flies up and can be caught
-            foreach (var c in GetComponents<Collider>()) Gun.IgnoreCollisionsBriefly(c);
+            foreach (var c in _colliders) Gun.IgnoreCollisionsBriefly(c);
             Gun.DropFromEnemy(velocity);
             Gun = null;
         }
 
-        /// <summary>Knocked by a thrown object: drops the weapon and staggers.</summary>
+        // --- reactions -----------------------------------------------------------------
+
+        /// <summary>A short guard pose (GameConfig enemies.defensivePose). Ignored mid-punch, while stunned or forming.</summary>
+        public void Flinch()
+        {
+            if (!Tuning.DefensivePose || _state != State.Moving) return;
+            _guardUntil = Time.time + Tuning.GuardSeconds;
+            if (_aim == Aim.Tell || _aim == Aim.Firing) LoseAim();
+        }
+
+        /// <summary>Your bullet moved from a to b this frame: enemies it passed close to flinch.</summary>
+        public static void NotifyBulletPass(Vector3 a, Vector3 b)
+        {
+            if (Alive.Count == 0 || !Tuning.DefensivePose) return;
+            float r = Tuning.GuardBulletDistance;
+            float r2 = r * r;
+            var ab = b - a;
+            float len2 = ab.sqrMagnitude;
+            for (int i = 0; i < Alive.Count; i++)
+            {
+                var e = Alive[i];
+                if (e._state != State.Moving) continue;
+                var chest = e.transform.position + Vector3.up * ChestHeight;
+                float t = len2 > 1e-10f ? Mathf.Clamp01(Vector3.Dot(chest - a, ab) / len2) : 0f;
+                if ((a + ab * t - chest).sqrMagnitude <= r2) e.Flinch();
+            }
+        }
+
+        void AlarmNeighbours()
+        {
+            if (!Tuning.DefensivePose) return;
+            float r2 = Tuning.GuardNeighbourDistance * Tuning.GuardNeighbourDistance;
+            for (int i = 0; i < Alive.Count; i++)
+                if ((Alive[i].transform.position - transform.position).sqrMagnitude <= r2) Alive[i].Flinch();
+        }
+
+        /// <summary>Knocked by a thrown object or a slow punch: drops the weapon and staggers.</summary>
         public void Stun(Vector3 point)
         {
-            if (_state == State.Dead) return;
+            if (_state >= State.Dying) return;
             EndReveal();   // hit while still forming: finish appearing at once
             DropGun(Vector3.up * 1.5f + Random.insideUnitSphere * 0.5f);
+            _aim = Aim.Idle;
+            _burstLeft = 0;
             _body.AimTarget = null;
+            _body.AimBlend = 0f;
             _body.Punch = 0f;
+            _body.Windup = 0f;
             Enter(State.Stunned);
             SoundBank.Instance?.Play(Sfx.Thud, point, 1f, 0.8f);
         }
 
-        public void Kill(Vector3 point, Vector3 direction)
+        /// <summary>
+        /// One hit kills. Bullets, throws and blades shatter the body at once; a punch first shows
+        /// glowing cracks spreading from the fist for GameConfig shatter.crackSeconds.
+        /// </summary>
+        public void Kill(Vector3 point, Vector3 direction, KillKind kind = KillKind.Bullet)
         {
-            if (_state == State.Dead) return;
-            _state = State.Dead;
-            DropGun(Vector3.up * 1.8f + direction * 0.6f);
-            Effects.KillFlash(point, direction);
-            ShardSystem.Shatter(_body.Parts, Mats.Get(Mats.Enemy), Mats.Get(Mats.EnemyDark), point, direction, 6);
-            SoundBank.Instance?.Play(Sfx.Shatter, point, 1f, Random.Range(0.9f, 1.1f));
-            Alive.Remove(this);
-            GameManager.Instance?.EnemyKilled(this);
+            if (!BeginDeath(point, direction)) return;
+            var cfg = Tuning.Shatter;
+            if (kind == KillKind.Punch && cfg.punchCracks && cfg.crackSeconds > 0f)
+            {
+                _state = State.Dying;
+                _stateTime = 0f;
+                _deathPoint = point;
+                _deathDir = direction;
+                Cracks.Spread(_body, point, direction, cfg.crackSeconds);
+                return;
+            }
+            Shatter.Break(_body, point, direction, FloorY);
             Destroy(gameObject);
         }
 
-        /// <summary>Removes the enemy without effects (restarting a wave).</summary>
+        /// <summary>
+        /// The katana: cut in half along the plane through point with planeNormal (the plane of the
+        /// blade's swing). Falls back to a shatter if the cut is off (GameConfig) or misses the body.
+        /// </summary>
+        public void Cut(Vector3 point, Vector3 planeNormal, Vector3 swingDir)
+        {
+            if (!BeginDeath(point, swingDir)) return;
+            if (!Tuning.Shatter.katanaCutsInHalf || !Shatter.Cut(_body, point, planeNormal, swingDir, FloorY))
+                Shatter.Break(_body, point, swingDir, FloorY);
+            Destroy(gameObject);
+        }
+
+        /// <summary>Everything every death does: stop, drop the gun, flash, sound, count the kill.</summary>
+        bool BeginDeath(Vector3 point, Vector3 direction)
+        {
+            if (_state >= State.Dying) return false;
+            _state = State.Dead;
+            EndReveal();   // the pieces break off a whole body
+            foreach (var c in _colliders) if (c != null) c.enabled = false;
+            if (_agent != null && _agent.enabled) _agent.enabled = false;
+            DropGun(Vector3.up * 1.8f + direction * 0.6f);
+            Effects.KillFlash(point, direction);
+            SoundBank.Instance?.Play(Sfx.Shatter, point, 1f, Random.Range(0.9f, 1.1f));
+            Alive.Remove(this);
+            if (GameManager.Instance != null) GameManager.Instance.EnemyKilled(this);
+            AlarmNeighbours();
+            return true;
+        }
+
+        /// <summary>Removes the enemy without effects (restarting a level or wave).</summary>
         public void Despawn()
         {
             _state = State.Dead;

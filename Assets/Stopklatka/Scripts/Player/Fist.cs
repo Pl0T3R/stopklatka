@@ -56,7 +56,7 @@ namespace Stopklatka
                 if (speed >= cfg.punchKillSpeed)
                 {
                     SoundBank.Instance?.Play(Sfx.Punch, point, 1f, Random.Range(0.9f, 1.1f));
-                    enemy.Kill(point, dir);
+                    enemy.Kill(point, dir, Enemy.KillKind.Punch);   // glowing cracks, then the shatter
                     hand.Haptic(h.punch);
                     TimeController.Instance?.ActionPulse();
                 }
