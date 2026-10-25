@@ -28,3 +28,7 @@ crashlytics-build.properties
 .vscode/
 .idea/
 .DS_Store
+
+# Reference screenshots from the original game: kept locally, not published (STYLE_GUIDE.md describes them)
+References/*.jpg
+References/*.png

@@ -6,7 +6,9 @@ The menu has three crystals: START, STYL (passthrough look: NORMALNY / BIAŁY / 
 
 The owner (Pl0T3R) speaks Polish, so talk to them in Polish. Code, comments and commit messages stay in English.
 
-Read `docs/PLAN.md` for the full design and its requirements:
+The current work follows `GAME_SPEC.md` (the owner's spec, in Polish), `PLAN.md` (how it maps onto this MR game, stage by stage) and `STYLE_GUIDE.md` (the visual target). Read them before changing gameplay or visuals. The owner's reference screenshots are in `References/` on their PC only; they are not in git.
+
+Read `docs/PLAN.md` for the original design and its requirements:
 - 120 Hz,
 - about 2024 px per eye,
 - controllers only,
