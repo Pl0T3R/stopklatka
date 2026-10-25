@@ -110,6 +110,7 @@ namespace Stopklatka
             best.FollowHand(Anchor);
             Haptic(0.35f, 0.05f);
             SoundBank.Instance?.Play(Sfx.Grab, point, 0.5f, 1f, false);
+            TimeController.Instance?.ActionPulse();
         }
 
         void Release()
@@ -118,7 +119,7 @@ namespace Stopklatka
             var g = Held;
             Held = null;
             g.OnRelease(velocity, angular);
-            if (velocity.magnitude > 1.5f) TimeController.Instance?.Kick(0.5f, 0.15f);
+            if (velocity.magnitude > GameConfig.Instance.time.throwPulseMinSpeed) TimeController.Instance?.ActionPulse();
         }
 
         /// <summary>Drops without throwing (another hand took it, or it broke).</summary>

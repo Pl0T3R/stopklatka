@@ -83,7 +83,7 @@ namespace Stopklatka
             if (layer == Layers.Player)
             {
                 if (Owner != BulletOwner.Enemy) return false;
-                GameManager.Instance?.PlayerHit(hit.point);
+                PlayerHealth.Instance?.TakeHit(hit.point);
                 BulletSystem.Release(this);
                 return true;
             }

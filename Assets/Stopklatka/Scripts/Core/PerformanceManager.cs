@@ -4,16 +4,18 @@ using UnityEngine.XR;
 namespace Stopklatka
 {
     /// <summary>
-    /// Asks for 120 Hz, keeps the GPU/CPU clocked for it and logs what the headset actually runs at.
+    /// Asks for the refresh rate from GameConfig (90 Hz by default, 120 as an option), keeps the
+    /// GPU/CPU clocked for it and logs what the headset actually runs at.
     /// Resolution is handled by OVRManager's dynamic resolution (render scale 1.0..1.205, set by the
     /// builder): it renders at ~2024 px per eye and drops only when needed to hold the frame rate.
     /// Left thumbstick click toggles an on-screen readout.
     /// </summary>
     public class PerformanceManager : MonoBehaviour
     {
-        public const float TargetRefreshRate = 120f;
-
         public static PerformanceManager Instance { get; private set; }
+
+        /// <summary>The display refresh rate in use (Hz). Physics runs one step per displayed frame.</summary>
+        public float RefreshRate { get; private set; }
 
         public float Fps { get; private set; }
         public float WorstFrameMs { get; private set; }
@@ -23,19 +25,25 @@ namespace Stopklatka
         int _frames;
         float _nextLog;
 
-        void Awake() => Instance = this;
+        void Awake()
+        {
+            Instance = this;
+            RefreshRate = GameConfig.Instance.performance.targetRefreshRate;
+            ShowReadout = GameConfig.Instance.debug.performanceReadout;
+        }
 
         void Start()
         {
-            ApplyRefreshRate();
-            OVRManager.foveatedRenderingLevel = OVRManager.FoveatedRenderingLevel.High;
-            OVRManager.useDynamicFoveatedRendering = true;
+            var perf = GameConfig.Instance.performance;
+            ApplyRefreshRate(perf.targetRefreshRate);
+            OVRManager.foveatedRenderingLevel = perf.foveation;
+            OVRManager.useDynamicFoveatedRendering = perf.dynamicFoveation;
             OVRManager.suggestedCpuPerfLevel = OVRManager.ProcessorPerformanceLevel.SustainedHigh;
             OVRManager.suggestedGpuPerfLevel = OVRManager.ProcessorPerformanceLevel.SustainedHigh;
             _nextLog = Time.unscaledTime + 3f;
         }
 
-        void ApplyRefreshRate()
+        void ApplyRefreshRate(float target)
         {
             float[] available = OVRManager.display != null ? OVRManager.display.displayFrequenciesAvailable : null;
             float chosen = 0f;
@@ -43,12 +51,15 @@ namespace Stopklatka
             {
                 foreach (var f in available)
                 {
-                    if (Mathf.Abs(f - TargetRefreshRate) < 0.5f) { chosen = f; break; }
-                    if (f <= TargetRefreshRate && f > chosen) chosen = f;
+                    if (Mathf.Abs(f - target) < 0.5f) { chosen = f; break; }
+                    if (f <= target && f > chosen) chosen = f;
                 }
             }
             if (chosen > 0f) OVRPlugin.systemDisplayFrequency = chosen;
-            Debug.Log($"[Stopklatka] Refresh rates available: {(available == null ? "none" : string.Join(", ", available))}; requested {chosen} Hz");
+            float actual = OVRPlugin.systemDisplayFrequency;
+            RefreshRate = actual > 1f ? actual : chosen > 0f ? chosen : target;
+            Debug.Log($"[Stopklatka] Refresh rates available: {(available == null ? "none" : string.Join(", ", available))}; " +
+                      $"requested {chosen} Hz, running {RefreshRate} Hz, physics step 1/{RefreshRate:F0} s");
         }
 
         void Update()

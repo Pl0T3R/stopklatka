@@ -1,10 +1,12 @@
+using System;
 using UnityEngine;
 
 namespace Stopklatka
 {
     public enum PlayMode { School, Home }
 
-    /// <summary>Numbers that change with the place you play in.</summary>
+    /// <summary>Numbers that change with the place you play in. Edited in GameConfig (school / home).</summary>
+    [Serializable]
     public sealed class ModeProfile
     {
         public string Label;
@@ -13,11 +15,13 @@ namespace Stopklatka
         public float WalkSpeed;
         public float EnemyBulletSpeed;
         public float ReactionMultiplier;
-        public float PlayerRoomChance;    // how often enemies appear in your room instead of walking in from another
+        [Tooltip("How often enemies appear in your room instead of walking in from another.")]
+        [Range(0f, 1f)] public float PlayerRoomChance;
         public int MaxAlive, MaxPerWave;
-        public float WaveGrowth;          // extra enemies per wave
+        [Tooltip("Extra enemies per wave.")]
+        public float WaveGrowth;
 
-        public static readonly ModeProfile School = new()
+        public static ModeProfile CreateSchool() => new()
         {
             Label = "SZKOŁA",
             MinSpawnDistance = 2.5f, MaxSpawnDistance = 9f,
@@ -27,7 +31,7 @@ namespace Stopklatka
         };
 
         // A whole house (~150 m2, several rooms, maybe floors): closer, fewer at once, slower bullets.
-        public static readonly ModeProfile Home = new()
+        public static ModeProfile CreateHome() => new()
         {
             Label = "DOM",
             MinSpawnDistance = 1.8f, MaxSpawnDistance = 7f,
@@ -52,7 +56,7 @@ namespace Stopklatka
             }
         }
 
-        public static ModeProfile Profile => Current == PlayMode.Home ? ModeProfile.Home : ModeProfile.School;
+        public static ModeProfile Profile => Current == PlayMode.Home ? GameConfig.Instance.home : GameConfig.Instance.school;
 
         public static void Toggle() => Set(Current == PlayMode.School ? PlayMode.Home : PlayMode.School);
 

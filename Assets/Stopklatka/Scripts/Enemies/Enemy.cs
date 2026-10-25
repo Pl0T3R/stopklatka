@@ -106,7 +106,7 @@ namespace Stopklatka
                     _body.PunchTarget = head;
                     _body.Punch = _stateTime < 0.55f ? Mathf.SmoothStep(0f, 0.3f, _stateTime / 0.55f) : Mathf.Clamp01((_stateTime - 0.55f) / 0.12f);
                     if (_stateTime >= 0.67f && _stateTime - dt < 0.67f && dist < Tuning.EnemyPunchRange + 0.2f)
-                        GameManager.Instance?.PlayerHit(head);
+                        PlayerHealth.Instance?.TakeHit(head);
                     if (_stateTime >= 1.1f) { _body.Punch = 0f; Enter(State.Moving); }
                     break;
 

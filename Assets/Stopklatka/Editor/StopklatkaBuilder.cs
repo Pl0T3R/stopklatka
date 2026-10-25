@@ -10,12 +10,14 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.SceneManagement;
 
 namespace Stopklatka.EditorTools
 {
     /// <summary>
     /// One click from a fresh Meta XR project to a buildable game:
-    /// project settings for Quest 3 at 120 Hz, materials, and the scene
+    /// project settings for Quest 3 (90 Hz by default, 120 Hz in GameConfig), materials, the
+    /// GameConfig asset, and the scene
     /// (camera rig with passthrough, MRUK, room colliders, NavMesh, Depth API, game objects).
     /// Safe to run again; it updates what is already there.
     /// </summary>
@@ -24,12 +26,15 @@ namespace Stopklatka.EditorTools
         const string Root = "Assets/Stopklatka";
         const string MaterialDir = Root + "/Resources/Materials";
         const string ScenePath = Root + "/Scenes/Stopklatka.unity";
+        const string TimeTestScenePath = Root + "/Scenes/TimeTest.unity";
+        const string ConfigPath = Root + "/Resources/" + GameConfig.ResourcePath + ".asset";
 
         [MenuItem("Stopklatka/Build Game (settings + materials + scene)", priority = 0)]
         public static void BuildAll()
         {
             ConfigureProject();
             CreateMaterials();
+            EnsureGameConfig();
             BuildScene();
             Debug.Log("[Stopklatka] Done. Next: Meta > Tools > Project Setup Tool > Fix All, then File > Build And Run.");
         }
@@ -62,7 +67,7 @@ namespace Stopklatka.EditorTools
             ConfigureUrp();
             ConfigureMetaFeatures();
             AssetDatabase.SaveAssets();
-            Debug.Log("[Stopklatka] Project configured: Vulkan, IL2CPP ARM64, ASTC, URP tuned for 120 Hz, passthrough + scene + boundary features.");
+            Debug.Log("[Stopklatka] Project configured: Vulkan, IL2CPP ARM64, ASTC, URP tuned for 90/120 Hz, passthrough + scene + boundary features.");
         }
 
         static void ConfigureUrp()
@@ -183,43 +188,29 @@ namespace Stopklatka.EditorTools
             return m;
         }
 
-        // --- scene ----------------------------------------------------------------
+        // --- game config ----------------------------------------------------------
+
+        [MenuItem("Stopklatka/4. Create Game Config (if missing)", priority = 23)]
+        public static void EnsureGameConfig()
+        {
+            if (AssetDatabase.LoadAssetAtPath<GameConfig>(ConfigPath) != null) return;
+            Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath));
+            AssetDatabase.CreateAsset(ScriptableObject.CreateInstance<GameConfig>(), ConfigPath);
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[Stopklatka] Created {ConfigPath} with default settings. Tune the game there.");
+        }
+
+        // --- scenes ---------------------------------------------------------------
 
         [MenuItem("Stopklatka/3. Build Scene", priority = 22)]
         public static void BuildScene()
         {
-            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-            RenderSettings.skybox = null;
-            RenderSettings.ambientMode = AmbientMode.Flat;
-
-            // Camera rig with passthrough
-            var rigGo = InstantiatePrefab("OVRCameraRig", "com.meta.xr.sdk.core");
-            if (rigGo == null) { Debug.LogError("[Stopklatka] OVRCameraRig prefab not found. Is Meta XR Core SDK installed?"); return; }
-            var ovr = rigGo.GetComponent<OVRManager>() ?? rigGo.AddComponent<OVRManager>();
-            ovr.trackingOriginType = OVRManager.TrackingOrigin.FloorLevel;
-            ovr.isInsightPassthroughEnabled = true;
-            ovr.shouldBoundaryVisibilityBeSuppressed = true;
-            ovr.enableDynamicResolution = true;
-            ovr.quest3MinDynamicResolutionScale = 1.0f;
-            ovr.quest3MaxDynamicResolutionScale = 1.205f;   // ~2024 x 2120 per eye
-            var ovrSo = new SerializedObject(ovr);
+            var scene = NewScene();
+            var rigGo = CreateCameraRig(suppressBoundary: true);
+            if (rigGo == null) return;
+            var ovrSo = new SerializedObject(rigGo.GetComponent<OVRManager>());
             SetBool(ovrSo, "requestScenePermissionOnStartup", true);
             ovrSo.ApplyModifiedPropertiesWithoutUndo();
-            if (rigGo.GetComponent<OVRPassthroughLayer>() == null) rigGo.AddComponent<OVRPassthroughLayer>();
-
-            foreach (var cam in rigGo.GetComponentsInChildren<Camera>(true))
-            {
-                cam.clearFlags = CameraClearFlags.SolidColor;
-                cam.backgroundColor = new Color(0f, 0f, 0f, 0f);
-                cam.nearClipPlane = 0.05f;
-                cam.farClipPlane = 60f;
-                var data = cam.GetUniversalAdditionalCameraData();
-                data.renderPostProcessing = false;
-                data.antialiasing = AntialiasingMode.None;
-                data.renderShadows = false;
-                data.requiresDepthOption = CameraOverrideOption.Off;
-                data.requiresColorOption = CameraOverrideOption.Off;
-            }
 
             // Real-world occlusion
             var depthGo = new GameObject("EnvironmentDepth");
@@ -275,26 +266,114 @@ namespace Stopklatka.EditorTools
             if (navGo.GetComponent<NavMeshSurface>() == null) navGo.AddComponent<NavMeshSurface>();
 
             // The game
-            var game = new GameObject("Stopklatka");
-            game.AddComponent<PlayerRig>();
-            game.AddComponent<TimeController>();
-            game.AddComponent<PerformanceManager>();
+            var game = CreateGameRoot("Stopklatka", alwaysShowTimeIndicator: false);
             game.AddComponent<RoomService>();
             game.AddComponent<PassthroughStyle>();
+            game.AddComponent<GameManager>();
+
+            SaveScene(scene, ScenePath);
+            UseGameScene();
+        }
+
+        /// <summary>
+        /// A scene for checking the time system on its own: no scan, no menu, no waves. A turret fires
+        /// slow bullets at you, a pendulum swings in game time, one enemy, floating weapons and the
+        /// wrist time gauge. The boundary stays on, because nothing here knows where your walls are.
+        /// </summary>
+        [MenuItem("Stopklatka/Build Time Test Scene", priority = 30)]
+        public static void BuildTimeTestScene()
+        {
+            EnsureGameConfig();
+            if (AssetDatabase.LoadAssetAtPath<Material>($"{MaterialDir}/{Mats.Enemy}.mat") == null) CreateMaterials();
+            var scene = NewScene();
+            if (CreateCameraRig(suppressBoundary: false) == null) return;
+            var game = CreateGameRoot("TimeTest", alwaysShowTimeIndicator: true);
+            game.AddComponent<TimeTestScene>();
+            SaveScene(scene, TimeTestScenePath);
+            UseTimeTestScene();
+            Debug.Log("[Stopklatka] Build And Run now starts the time test. Stopklatka > Build Settings: Game Scene switches back.");
+        }
+
+        [MenuItem("Stopklatka/Build Settings: Game Scene", priority = 40)]
+        public static void UseGameScene() => UseScene(ScenePath);
+
+        [MenuItem("Stopklatka/Build Settings: Time Test Scene", priority = 41)]
+        public static void UseTimeTestScene() => UseScene(TimeTestScenePath);
+
+        static void UseScene(string path)
+        {
+            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(path) == null)
+            {
+                Debug.LogError($"[Stopklatka] {path} doesn't exist yet. Build it from the Stopklatka menu first.");
+                return;
+            }
+            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(path, true) };
+            Debug.Log($"[Stopklatka] {path} is now the only scene in the build.");
+        }
+
+        static Scene NewScene()
+        {
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            RenderSettings.skybox = null;
+            RenderSettings.ambientMode = AmbientMode.Flat;
+            return scene;
+        }
+
+        static void SaveScene(Scene scene, string path)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            EditorSceneManager.SaveScene(scene, path);
+            Debug.Log($"[Stopklatka] Scene saved to {path}.");
+        }
+
+        /// <summary>Camera rig with passthrough, ~2024 px per eye with dynamic resolution, floor-level tracking.</summary>
+        static GameObject CreateCameraRig(bool suppressBoundary)
+        {
+            var rigGo = InstantiatePrefab("OVRCameraRig", "com.meta.xr.sdk.core");
+            if (rigGo == null) { Debug.LogError("[Stopklatka] OVRCameraRig prefab not found. Is Meta XR Core SDK installed?"); return null; }
+            var ovr = rigGo.GetComponent<OVRManager>() ?? rigGo.AddComponent<OVRManager>();
+            ovr.trackingOriginType = OVRManager.TrackingOrigin.FloorLevel;
+            ovr.isInsightPassthroughEnabled = true;
+            ovr.shouldBoundaryVisibilityBeSuppressed = suppressBoundary;
+            ovr.enableDynamicResolution = true;
+            ovr.quest3MinDynamicResolutionScale = 1.0f;
+            ovr.quest3MaxDynamicResolutionScale = 1.205f;   // ~2024 x 2120 per eye
+            if (rigGo.GetComponent<OVRPassthroughLayer>() == null) rigGo.AddComponent<OVRPassthroughLayer>();
+
+            foreach (var cam in rigGo.GetComponentsInChildren<Camera>(true))
+            {
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                cam.nearClipPlane = 0.05f;
+                cam.farClipPlane = 60f;
+                var data = cam.GetUniversalAdditionalCameraData();
+                data.renderPostProcessing = false;
+                data.antialiasing = AntialiasingMode.None;
+                data.renderShadows = false;
+                data.requiresDepthOption = CameraOverrideOption.Off;
+                data.requiresColorOption = CameraOverrideOption.Off;
+            }
+            return rigGo;
+        }
+
+        /// <summary>The managers every scene needs, plus both hands.</summary>
+        static GameObject CreateGameRoot(string name, bool alwaysShowTimeIndicator)
+        {
+            var game = new GameObject(name);
+            game.AddComponent<PlayerRig>();
+            game.AddComponent<PlayerHealth>();
+            game.AddComponent<TimeController>();
+            game.AddComponent<PerformanceManager>();
             game.AddComponent<SoundBank>();
             game.AddComponent<Hud>();
-            game.AddComponent<GameManager>();
+            game.AddComponent<TimeIndicator>().AlwaysOn = alwaysShowTimeIndicator;
             var left = new GameObject("LeftHand");
             left.transform.SetParent(game.transform, false);
             left.AddComponent<ControllerHand>().IsLeft = true;
             var right = new GameObject("RightHand");
             right.transform.SetParent(game.transform, false);
             right.AddComponent<ControllerHand>().IsLeft = false;
-
-            Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
-            EditorSceneManager.SaveScene(scene, ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
-            Debug.Log($"[Stopklatka] Scene saved to {ScenePath} and set as the only scene in the build.");
+            return game;
         }
 
         static GameObject InstantiatePrefab(string name, string packageHint)

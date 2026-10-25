@@ -33,42 +33,60 @@ namespace Stopklatka
         }
     }
 
-    /// <summary>Gameplay numbers in one place, so play-testing changes stay simple.</summary>
+    /// <summary>
+    /// Shortcuts to the gameplay numbers. The values themselves live in the GameConfig asset
+    /// (see GameConfig.cs), so play-testing changes happen in the Inspector, not in code.
+    /// </summary>
     public static class Tuning
     {
-        // Time: how much you have to move before the world runs at full speed
-        public const float MinTimeScale = 0.03f;
-        public const float HeadSpeedForFullTime = 1.2f;    // m/s
-        public const float HeadTurnForFullTime = 2.8f;     // rad/s
-        public const float HandSpeedForFullTime = 2.6f;    // m/s
-        public const float MotionDeadzone = 0.06f;         // ignores tracking jitter (m/s)
-        public const float BasePhysicsStep = 1f / 120f;
+        static GameConfig C => GameConfig.Instance;
+
+        // Time: how much you have to move before the world runs at full speed (see TimeController)
+        public static float MinTimeScale => C.time.minTimeScale;
+        public static float MaxTimeScale => C.time.maxTimeScale;
+        public static float HeadSpeedForFullTime => C.time.headSpeedForFullTime;
+        public static float HeadTurnForFullTime => C.time.headTurnForFullTime;
+        public static float HandSpeedForFullTime => C.time.handSpeedForFullTime;
+        public static float MotionDeadzone => C.time.motionDeadzone;
+
+        /// <summary>Physics step at full speed: one step per displayed frame.</summary>
+        public static float BasePhysicsStep
+        {
+            get
+            {
+                var perf = PerformanceManager.Instance;
+                float hz = perf != null && perf.RefreshRate > 1f ? perf.RefreshRate : C.performance.targetRefreshRate;
+                return 1f / Mathf.Clamp(hz, 60f, 144f);
+            }
+        }
 
         // Player
-        public const float GrabRadius = 0.13f;
-        public const float ThrowBoost = 1.1f;
-        public const float MaxThrowSpeed = 18f;
+        public static float GrabRadius => C.player.grabRadius;
+        public static float ThrowBoost => C.player.throwBoost;
+        public static float MaxThrowSpeed => C.player.maxThrowSpeed;
 
         // Bullets (game-time m/s)
-        public const float PlayerBulletSpeed = 26f;
+        public static float PlayerBulletSpeed => C.combat.playerBulletSpeed;
         public static float EnemyBulletSpeed => GameMode.Profile.EnemyBulletSpeed;
-        public const float BulletLifetime = 8f;
+        public static float BulletLifetime => C.combat.bulletLifetime;
 
         // Enemies (school and home differ, see GameMode.cs)
         public static float EnemyWalkSpeed => GameMode.Profile.WalkSpeed;
         public static float EnemyMinSpawnDistance => GameMode.Profile.MinSpawnDistance;
         public static float EnemyMaxSpawnDistance => GameMode.Profile.MaxSpawnDistance;
         public static float EnemyPreferredRange => GameMode.Profile.PreferredRange;
-        public const float EnemySightRange = 10f;
-        public const float EnemyPunchRange = 0.85f;
+        public static float EnemySightRange => C.enemies.sightRange;
+        public static float EnemyPunchRange => C.enemies.punchRange;
 
         public static int EnemiesInWave(int wave) =>
             Mathf.Min(2 + Mathf.FloorToInt(wave * GameMode.Profile.WaveGrowth), GameMode.Profile.MaxPerWave);
         public static int AliveCap(int wave) => Mathf.Min(2 + wave / 2, GameMode.Profile.MaxAlive);
         public static float ReactionTime(int wave) =>
-            Mathf.Lerp(1.3f, 0.55f, Mathf.Clamp01((wave - 1) / 8f)) * GameMode.Profile.ReactionMultiplier;
-        public static float FireInterval(int wave) => Mathf.Lerp(3.0f, 1.6f, Mathf.Clamp01((wave - 1) / 8f));
-        public static float ArmedChance(int wave) => Mathf.Lerp(0.55f, 0.85f, Mathf.Clamp01((wave - 1) / 6f));
-        public static float ShotgunChance(int wave) => wave < 3 ? 0f : 0.25f;
+            Mathf.Lerp(C.enemies.reactionFirstWave, C.enemies.reactionLateWave, Mathf.Clamp01((wave - 1) / 8f)) * GameMode.Profile.ReactionMultiplier;
+        public static float FireInterval(int wave) =>
+            Mathf.Lerp(C.enemies.fireIntervalFirstWave, C.enemies.fireIntervalLateWave, Mathf.Clamp01((wave - 1) / 8f));
+        public static float ArmedChance(int wave) =>
+            Mathf.Lerp(C.enemies.armedFirstWave, C.enemies.armedLateWave, Mathf.Clamp01((wave - 1) / 6f));
+        public static float ShotgunChance(int wave) => wave < 3 ? 0f : C.enemies.shotgunShare;
     }
 }

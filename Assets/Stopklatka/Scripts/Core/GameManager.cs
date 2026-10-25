@@ -34,10 +34,19 @@ namespace Stopklatka
         {
             Instance = this;
             Layers.ConfigureCollisions();
+            // scenes built before PlayerHealth existed get it here
+            if (GetComponent<PlayerHealth>() == null) gameObject.AddComponent<PlayerHealth>();
+        }
+
+        void OnDestroy()
+        {
+            if (PlayerHealth.Instance != null) PlayerHealth.Instance.Hit -= PlayerHit;
         }
 
         IEnumerator Start()
         {
+            // Start runs after every Awake, so PlayerHealth.Instance is set by now
+            PlayerHealth.Instance.Hit += PlayerHit;
             yield return null;
             Hud.Instance.Title("STOPKLATKA", 0f, Color.white);
             Hud.Instance.Sub("Wczytuję skan pomieszczeń…", 0f);

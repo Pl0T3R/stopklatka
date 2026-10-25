@@ -42,7 +42,7 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
    - If the setup tool refuses because `Assets/` already exists, create the project in a temporary folder, then copy `Assets/Stopklatka`, `CLAUDE.md`, `docs/` and `.mcp.json` into it.
 2. **Build the game content.** In Unity, run the menu **Stopklatka → Build Game (settings + materials + scene)**. Then run **Meta → Tools → Project Setup Tool → Fix All** for Android.
    - Check that OpenXR has the Meta Quest feature group enabled and that the render mode is **Multi-view**.
-   - Check that the only scene in Build Settings is `Assets/Stopklatka/Scenes/Stopklatka.unity`.
+   - Check that the only scene in Build Settings is `Assets/Stopklatka/Scenes/Stopklatka.unity`. **Stopklatka → Build Settings: Game Scene** sets it. **Stopklatka → Build Time Test Scene** switches the build to the time test scene; switch back before building the game.
 3. **Compile to zero errors and zero warnings.** Fix what breaks while keeping the design in `docs/PLAN.md`. Re-run Stopklatka → Build Game after changing the builder.
 4. **Build and run on the headset.**
    - Start with `metavr device list`.
@@ -53,9 +53,9 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 
 ## Verification checklist (from the plan)
 
-- [ ] No exceptions in the logs. The log shows `display 120 Hz` and the eye texture size.
-- [ ] With 8 enemies on screen, OVR Metrics or `metavr perf` shows a stable 120 fps and p95 frame time under 8.3 ms. The resolution drops only when needed.
-- [ ] Time nearly stops when standing still and speeds up with head or hand movement.
+- [ ] No exceptions in the logs. The log shows `display 90 Hz` (120 Hz when `performance.targetRefreshRate` in GameConfig is 120), `physics step 1/90 s` and the eye texture size.
+- [ ] With 8 enemies on screen, OVR Metrics or `metavr perf` shows a stable 90 fps and p95 frame time under 11.1 ms (with the 120 Hz option: 120 fps, 8.3 ms). The resolution drops only when needed.
+- [ ] Time nearly stops when standing still and speeds up with head or hand movement (details in "Time test scene" below).
 - [ ] All four weapons work:
   - pistol: 4 shots,
   - shotgun: 2 shots, spread,
@@ -77,10 +77,28 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 - [ ] TRYB switches SZKOŁA ↔ DOM and the menu subtitle shows the mode. Both survive an app restart.
 - [ ] Home mode with several rooms: bullets and enemies' line of sight pass through doorways (MRUK cuts `DOOR_FRAME` holes in the wall colliders). Enemies only spawn on the floor you're on.
 
+### Time test scene (stage 2)
+
+Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no scan, so stand with a few metres of free space ahead. The boundary stays on in this scene.
+- [ ] The wrist gauge (above the left controller) shows the time scale: about `x0.03` when standing still. The pendulum and the turret's bullet nearly freeze.
+- [ ] A step or a quick hand movement brings the gauge to `x1.00` within about 0.1 s. After stopping it falls back within about 0.3 s, without flicker.
+- [ ] Turning the head alone speeds time up about a third as much as moving (weight `headTurnWeight` 0.3).
+- [ ] A shot, a grab or a fast throw jumps the gauge to `x1.00` for 0.2 s (the white tick shows the target).
+- [ ] A bottle thrown while time is slow flies smoothly, without stepping (physics step scales with time).
+- [ ] A turret bullet can be dodged in slow time. A hit shows the red vignette and `TRAFIONY (n)`, nothing restarts.
+- [ ] The enemy on the right freezes and moves with time like the pendulum. Killed, it comes back after 3 s.
+- [ ] The left menu button puts everything in front of you again. A left thumbstick click shows FPS, motion, target and counters.
+- [ ] Recentering (hold the Meta button) doesn't make time jump.
+- [ ] Afterwards: **Stopklatka → Build Settings: Game Scene**.
+
 ## Where to tune (most likely needed on the real device)
 
-- `Scripts/Core/Tuning.cs`: time feel, player bullet speed, reaction time curves.
-- `Scripts/Core/GameMode.cs`: per-mode numbers (school / home): spawn distances, enemies at once and per wave, enemy speed and bullet speed, how often enemies spawn in your room.
+- `Resources/GameConfig.asset` (created by Build Game, edit it in the Inspector, also in Play mode):
+  - `time`: time feel (minimum scale, speeds for full time, head turn weight, response curve, smoothing, action pulse),
+  - `player`, `combat`, `enemies`: grab radius, throws, player bullet speed, reaction times,
+  - `school` / `home`: per-mode numbers (spawn distances, enemies at once and per wave, enemy speed and bullet speed, how often enemies spawn in your room). The factory defaults are in `Scripts/Core/GameMode.cs`,
+  - `performance`: refresh rate (90 or 120), foveation,
+  - `debug`: the wrist time gauge and the FPS readout at start.
 - `Scripts/Visuals/Factory.cs`:
   - `GunHoldPosition` / `GunHoldEuler`: if guns sit tilted in the hand, fix this first,
   - the katana and bottle hold poses.
@@ -94,6 +112,7 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 
 ## Known risks to watch
 
+- **GameConfig:** if `Resources/GameConfig.asset` is missing, the log says so and code uses the defaults from `GameConfig.cs`. Stopklatka → 4. Create Game Config makes it. Fields added later keep their code defaults in an existing asset.
 - **Dynamic resolution** depends on the OpenXR plugin version (see `OVRManager`). If `renderViewportScale` never changes, set `XRSettings.eyeTextureResolutionScale` directly in `PerformanceManager`.
 - **Door frames:** `EffectMesh.CutHoles = DOOR_FRAME` cuts doorways out of the wall meshes, and the wall colliders are built from those meshes. If bullets still stop in doorways, check in the Scene view that the generated wall `MeshCollider`s have the holes.
 - **Floors:** `RoomService.UpdateFloor` takes the floor height from `MRUK.GetCurrentRoom()` every frame. Stairs are outside every room, so the game pauses there on purpose.

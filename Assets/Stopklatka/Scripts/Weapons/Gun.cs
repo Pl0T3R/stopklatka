@@ -41,7 +41,7 @@ namespace Stopklatka
             Effects.MuzzleFlash(Muzzle.position, Muzzle.rotation);
             SoundBank.Instance?.Play(Sound, Muzzle.position, 1f, Random.Range(0.95f, 1.05f));
             hand.Haptic(Kind == GunKind.Shotgun ? 1f : 0.75f, Kind == GunKind.Shotgun ? 0.18f : 0.1f);
-            TimeController.Instance?.Kick(0.7f, 0.18f);
+            TimeController.Instance?.ActionPulse();
         }
 
         /// <summary>Enemies have unlimited ammo but slower bullets and a wobbly aim.</summary>

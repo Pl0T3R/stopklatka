@@ -103,11 +103,22 @@ Po każdym etapie:
 | --- | --- | --- | --- |
 | 1 | główna sesja | Ten plan, `STYLE_GUIDE.md`, `GAME_SPEC.md`, subagenci | Pliki w repo |
 | 2 | główna sesja | `GameConfig` (SO) + przeniesienie `Tuning`. `TimeController` według specyfikacji (wagi, SmoothDamp, impulsy, `fixedDeltaTime` od odświeżania). `PerformanceManager` 90/120. Wskaźnik na nadgarstku. Scena testowa **Stopklatka → Build Time Test Scene** (wieżyczka strzelająca wolnymi pociskami, wahadło, cele) | Kompilacja OK, lista testów czasu w `CLAUDE.md` |
-| 3 | `unity-dev` | Pistolet maszynowy, pusty strzał (klik i wibracja), `killOnThrow`, nowe przedmioty do rzucania, pięść, zestrzeliwanie pocisków, łapanie w locie, impulsy czasu przy chwycie i rzucie | Kryteria 2, 3 i 6 możliwe do sprawdzenia |
+| 3 | `unity-dev` | Pistolet maszynowy, pusty strzał (klik i wibracja), `killOnThrow`, nowe przedmioty do rzucania, pięść, zestrzeliwanie pocisków, łapanie w locie (impulsy czasu przy chwycie i rzucie są już z etapu 2) | Kryteria 2, 3 i 6 możliwe do sprawdzenia |
 | 4 | `unity-dev` | Cięcie na pół, świecące przełomy i przekroje, `LevelManager` z restartem poziomu po 1,5 s, fale w poziomach | Kryteria 4 i 5 |
 | 5 | główna sesja | Styl: gradient filtra SUPERHOT według palety, kreskowanie, kolory i materiały, dłonie i broń. Dźwięk: AudioMixer i ambient narastający z ruchem | Lista ze `STYLE_GUIDE.md` |
 | 6 | `unity-dev` | 3 poziomy (rekwizyty i fale), menu z sześcianów, wybór poziomu, wyjście, przejścia i napisy w TMP | Pełna gra od menu do końca poziomu 3 |
 | 7 | `unity-dev` | Optymalizacja: budżety niżej, pooling, ustawienia XR i buildu (raport z wartościami) | Budżety spełnione na papierze, lista pomiarów na gogle |
+
+### Stan
+
+- **Etap 1: gotowy.** Plan, `STYLE_GUIDE.md`, `GAME_SPEC.md`, subagenci.
+- **Etap 2: gotowy (kompilacja testowa: 0 błędów, 0 ostrzeżeń; niesprawdzony w Unity i na goglach).**
+  - `GameConfig` (`Scripts/Core/GameConfig.cs`, asset `Resources/GameConfig.asset` tworzy builder): sekcje `time`, `player` (klasa `HandSettings`, bo `PlayerSettings` zasłaniałoby `UnityEditor.PlayerSettings`), `combat`, `enemies`, `school`, `home`, `performance`, `debug`. `Tuning` i `GameMode.Profile` czytają z niego.
+  - `TimeController`: ruch = max(głowa, dłonie, 0,3 × obrót głowy), krzywa odpowiedzi, `SmoothDamp` na czasie rzeczywistym (0,05 s w górę, 0,18 s w dół), impuls 0,2 s przy strzale, chwycie i szybkim rzucie, pomijanie skoków trackingu, `fixedDeltaTime = 1/odświeżanie × timeScale`.
+  - `PerformanceManager`: 90 Hz domyślnie, 120 z configu, foveation z configu.
+  - `PlayerHealth`: trafienia gracza jako zdarzenie (gra restartuje falę, scena testowa tylko liczy).
+  - `TimeIndicator`: wskaźnik czasu nad lewym nadgarstkiem (`debug.wristTimeIndicator`, w scenie testowej zawsze).
+  - `TimeTestScene` + **Stopklatka → Build Time Test Scene**: wieżyczka (pocisk co 2,5 s czasu gry), wahadło, przeciwnik, broń w zasięgu ręki. Przełączanie scen: **Stopklatka → Build Settings: Game Scene / Time Test Scene**.
 
 **Budżety wydajności (90 Hz, czyli 11,1 ms na klatkę):**
 - do 150 draw calli,
