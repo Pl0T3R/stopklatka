@@ -54,6 +54,9 @@ namespace Stopklatka
 
         public const float HipY = 0.94f;
         const float ShoulderX = 0.215f, ShoulderY = 0.27f;   // relative to the chest pivot
+        const float HipX = 0.095f;
+        static readonly Vector3 ChestPivot = new(0f, 0.22f, 0.01f), HeadPivot = new(0f, 0.34f, 0f);
+        static readonly Vector3 ElbowPivot = new(0f, -0.29f, 0f), KneePivot = new(0f, -0.46f, 0f);
 
         static readonly int RevealYId = Shader.PropertyToID("_RevealY");
         static MaterialPropertyBlock _revealBlock;
@@ -222,18 +225,18 @@ namespace Stopklatka
             body.Shadow = shadow.transform;
 
             body.Hips = Pivot("Hips", root, new Vector3(0f, HipY, 0f));
-            body.Chest = Pivot("Chest", body.Hips, new Vector3(0f, 0.22f, 0.01f));
-            body.Head = Pivot("Head", body.Chest, new Vector3(0f, 0.34f, 0f));
+            body.Chest = Pivot("Chest", body.Hips, ChestPivot);
+            body.Head = Pivot("Head", body.Chest, HeadPivot);
             body.ShoulderL = Pivot("ShoulderL", body.Chest, new Vector3(-ShoulderX, ShoulderY, 0f));
             body.ShoulderR = Pivot("ShoulderR", body.Chest, new Vector3(ShoulderX, ShoulderY, 0f));
-            body.ElbowL = Pivot("ElbowL", body.ShoulderL, new Vector3(0f, -0.29f, 0f));
-            body.ElbowR = Pivot("ElbowR", body.ShoulderR, new Vector3(0f, -0.29f, 0f));
+            body.ElbowL = Pivot("ElbowL", body.ShoulderL, ElbowPivot);
+            body.ElbowR = Pivot("ElbowR", body.ShoulderR, ElbowPivot);
             body.HandSocketR = Pivot("HandSocketR", body.ElbowR, new Vector3(0f, -0.31f, 0.02f));
             body.HandSocketR.localRotation = Quaternion.Euler(90f, 0f, 0f);   // weapon forward = along the arm
-            body.HipL = Pivot("HipL", root, new Vector3(-0.095f, HipY, 0f));
-            body.HipR = Pivot("HipR", root, new Vector3(0.095f, HipY, 0f));
-            body.KneeL = Pivot("KneeL", body.HipL, new Vector3(0f, -0.46f, 0f));
-            body.KneeR = Pivot("KneeR", body.HipR, new Vector3(0f, -0.46f, 0f));
+            body.HipL = Pivot("HipL", root, new Vector3(-HipX, HipY, 0f));
+            body.HipR = Pivot("HipR", root, new Vector3(HipX, HipY, 0f));
+            body.KneeL = Pivot("KneeL", body.HipL, KneePivot);
+            body.KneeR = Pivot("KneeR", body.HipR, KneePivot);
 
             var up = Vector3.up;
             var down = Vector3.down;
@@ -287,57 +290,13 @@ namespace Stopklatka
         {
             if (_hipsMesh != null) return;
             var rng = new System.Random(2024);
-
-            // hips: crotch, pelvis (widest), abdomen, narrow waist
-            var hips = new MeshKit.Builder();
-            hips.Loft(Vector3.zero, new[]
-            {
-                new Vector4(-0.12f, 0.09f, 0.075f, 0f), new Vector4(-0.05f, 0.165f, 0.105f, 0f),
-                new Vector4(0.06f, 0.15f, 0.1f, 0.005f), new Vector4(0.22f, 0.13f, 0.088f, 0.01f),
-            }, 6, 0f, 0.006f, rng);
-            _hipsMesh = hips.ToMesh("Enemy Hips");
-
-            // chest: an inverted wedge from the waist up to broad pointed shoulders, sloping to the neck
-            var chest = new MeshKit.Builder();
-            chest.Loft(Vector3.zero, new[]
-            {
-                new Vector4(-0.03f, 0.13f, 0.085f, 0f), new Vector4(0.12f, 0.185f, 0.115f, 0.012f),
-                new Vector4(0.27f, 0.245f, 0.115f, 0f), new Vector4(0.35f, 0.13f, 0.085f, -0.01f),
-            }, 6, 0f, 0.008f, rng);
-            _chestMesh = chest.ToMesh("Enemy Chest");
-
-            // head: neck plus a long narrow faceless crystal (about 0.18 x 0.3 m), chin a little forward
-            var head = new MeshKit.Builder();
-            head.Prism(new Vector3(0f, -0.02f, 0f), new Vector3(0f, 0.08f, 0.005f), 0.048f, 0.042f, 6, 0.003f, rng);
-            head.Loft(Vector3.zero, new[]
-            {
-                new Vector4(0.04f, 0.04f, 0.05f, 0.035f), new Vector4(0.1f, 0.078f, 0.088f, 0.02f),
-                new Vector4(0.2f, 0.09f, 0.1f, 0f), new Vector4(0.27f, 0.078f, 0.092f, -0.008f),
-                new Vector4(0.3f, 0.035f, 0.05f, -0.012f),
-            }, 6, 0f, 0.006f, rng);
-            _headMesh = head.ToMesh("Enemy Head");
-
-            // upper arm: deltoid block on a tapered prism (flat top, where a break cap fits)
-            var ua = new MeshKit.Builder();
-            ua.Box(new Vector3(0f, -0.02f, 0f), new Vector3(0.12f, 0.1f, 0.11f), Quaternion.identity, 0.85f, 0.006f, rng);
-            ua.Prism(new Vector3(0f, 0.035f, 0f), new Vector3(0f, -0.29f, 0f), 0.062f, 0.046f, 6, 0.005f, rng);
-            _upperArmMesh = ua.ToMesh("Enemy Upper Arm");
-
-            // forearm with a block hand
-            var fa = new MeshKit.Builder();
-            fa.Prism(new Vector3(0f, 0.02f, 0f), new Vector3(0f, -0.25f, 0f), 0.047f, 0.036f, 6, 0.005f, rng);
-            fa.Box(new Vector3(0f, -0.3f, 0.008f), new Vector3(0.07f, 0.1f, 0.042f), Quaternion.identity, 0.9f, 0.006f, rng);
-            _forearmMesh = fa.ToMesh("Enemy Forearm");
-
-            var th = new MeshKit.Builder();
-            th.Prism(new Vector3(0f, 0.04f, 0f), new Vector3(0f, -0.46f, 0f), 0.085f, 0.058f, 7, 0.007f, rng);
-            _thighMesh = th.ToMesh("Enemy Thigh");
-
-            // shin with a long foot
-            var sh = new MeshKit.Builder();
-            sh.Prism(new Vector3(0f, 0.025f, 0f), new Vector3(0f, -0.41f, 0f), 0.06f, 0.042f, 6, 0.006f, rng);
-            sh.Box(new Vector3(0f, -0.44f, 0.055f), new Vector3(0.095f, 0.06f, 0.23f), Quaternion.identity, 0.85f, 0.008f, rng);
-            _shinMesh = sh.ToMesh("Enemy Shin");
+            _hipsMesh = Shape(HipsShape, rng, "Enemy Hips");
+            _chestMesh = Shape(ChestShape, rng, "Enemy Chest");
+            _headMesh = Shape(HeadShape, rng, "Enemy Head");
+            _upperArmMesh = Shape(UpperArmShape, rng, "Enemy Upper Arm");
+            _forearmMesh = Shape(ForearmShape, rng, "Enemy Forearm");
+            _thighMesh = Shape(ThighShape, rng, "Enemy Thigh");
+            _shinMesh = Shape(ShinShape, rng, "Enemy Shin");
 
             // soft dark disc: opaque-ish center fading to nothing at the edge
             var sd = new MeshKit.Builder();
@@ -348,6 +307,159 @@ namespace Stopklatka
                 float r = new Vector2(p.x, p.z).magnitude;
                 return new Color(1f, 1f, 1f, r < 0.01f ? 1f : r < 0.2f ? 0.7f : 0f);
             });
+        }
+
+        static Mesh Shape(System.Action<MeshKit.Builder, System.Random> shape, System.Random rng, string name)
+        {
+            var b = new MeshKit.Builder();
+            shape(b, rng);
+            return b.ToMesh(name);
+        }
+
+        // hips: crotch, pelvis (widest), abdomen, narrow waist
+        static void HipsShape(MeshKit.Builder b, System.Random rng) =>
+            b.Loft(Vector3.zero, new[]
+            {
+                new Vector4(-0.12f, 0.09f, 0.075f, 0f), new Vector4(-0.05f, 0.165f, 0.105f, 0f),
+                new Vector4(0.06f, 0.15f, 0.1f, 0.005f), new Vector4(0.22f, 0.13f, 0.088f, 0.01f),
+            }, 6, 0f, 0.006f, rng);
+
+        // chest: an inverted wedge from the waist up to broad pointed shoulders, sloping to the neck
+        static void ChestShape(MeshKit.Builder b, System.Random rng) =>
+            b.Loft(Vector3.zero, new[]
+            {
+                new Vector4(-0.03f, 0.13f, 0.085f, 0f), new Vector4(0.12f, 0.185f, 0.115f, 0.012f),
+                new Vector4(0.27f, 0.245f, 0.115f, 0f), new Vector4(0.35f, 0.13f, 0.085f, -0.01f),
+            }, 6, 0f, 0.008f, rng);
+
+        // head: neck plus a long narrow faceless crystal (about 0.18 x 0.3 m), chin a little forward
+        static void HeadShape(MeshKit.Builder b, System.Random rng)
+        {
+            b.Prism(new Vector3(0f, -0.02f, 0f), new Vector3(0f, 0.08f, 0.005f), 0.048f, 0.042f, 6, 0.003f, rng);
+            b.Loft(Vector3.zero, new[]
+            {
+                new Vector4(0.04f, 0.04f, 0.05f, 0.035f), new Vector4(0.1f, 0.078f, 0.088f, 0.02f),
+                new Vector4(0.2f, 0.09f, 0.1f, 0f), new Vector4(0.27f, 0.078f, 0.092f, -0.008f),
+                new Vector4(0.3f, 0.035f, 0.05f, -0.012f),
+            }, 6, 0f, 0.006f, rng);
+        }
+
+        // upper arm: deltoid block on a tapered prism (flat top, where a break cap fits)
+        static void UpperArmShape(MeshKit.Builder b, System.Random rng)
+        {
+            b.Box(new Vector3(0f, -0.02f, 0f), new Vector3(0.12f, 0.1f, 0.11f), Quaternion.identity, 0.85f, 0.006f, rng);
+            b.Prism(new Vector3(0f, 0.035f, 0f), new Vector3(0f, -0.29f, 0f), 0.062f, 0.046f, 6, 0.005f, rng);
+        }
+
+        // forearm with a block hand
+        static void ForearmShape(MeshKit.Builder b, System.Random rng)
+        {
+            b.Prism(new Vector3(0f, 0.02f, 0f), new Vector3(0f, -0.25f, 0f), 0.047f, 0.036f, 6, 0.005f, rng);
+            b.Box(new Vector3(0f, -0.3f, 0.008f), new Vector3(0.07f, 0.1f, 0.042f), Quaternion.identity, 0.9f, 0.006f, rng);
+        }
+
+        static void ThighShape(MeshKit.Builder b, System.Random rng) =>
+            b.Prism(new Vector3(0f, 0.04f, 0f), new Vector3(0f, -0.46f, 0f), 0.085f, 0.058f, 7, 0.007f, rng);
+
+        // shin with a long foot
+        static void ShinShape(MeshKit.Builder b, System.Random rng)
+        {
+            b.Prism(new Vector3(0f, 0.025f, 0f), new Vector3(0f, -0.41f, 0f), 0.06f, 0.042f, 6, 0.006f, rng);
+            b.Box(new Vector3(0f, -0.44f, 0.055f), new Vector3(0.095f, 0.06f, 0.23f), Quaternion.identity, 0.85f, 0.008f, rng);
+        }
+
+        // --- statues (level props, stage 6) ---------------------------------------------
+
+        public const int StatuePoseCount = 3;
+        static readonly Mesh[] StatueMeshes = new Mesh[StatuePoseCount];
+
+        /// <summary>
+        /// A white statue for the GALERIA level: the same figure as the enemies, posed and merged into
+        /// one mesh (one draw call). Poses: 0 standing at ease, 1 one arm raised in a stride,
+        /// 2 arms crossed before the face. Built once per pose. The feet are at y = 0.
+        /// </summary>
+        public static Mesh StatueMesh(int pose)
+        {
+            pose = ((pose % StatuePoseCount) + StatuePoseCount) % StatuePoseCount;
+            if (StatueMeshes[pose] != null) return StatueMeshes[pose];
+            var rng = new System.Random(77 + pose);
+            var b = new MeshKit.Builder();
+
+            Quaternion hips = Quaternion.identity, chest = Quaternion.identity, head = Quaternion.identity;
+            Quaternion shL, shR, elL, elR, hipL, hipR, knL, knR;
+            switch (pose)
+            {
+                case 1:   // reaching up in a stride
+                    hips = Quaternion.Euler(0f, -6f, 0f);
+                    chest = Quaternion.Euler(-4f, 8f, 0f);
+                    head = Quaternion.Euler(-18f, 0f, 0f);
+                    shR = Quaternion.FromToRotation(Vector3.down, new Vector3(0.25f, 0.95f, 0.15f).normalized);
+                    elR = Quaternion.Euler(-12f, 0f, 0f);
+                    shL = Quaternion.Euler(14f, 0f, -10f);
+                    elL = Quaternion.Euler(-25f, 0f, 0f);
+                    hipL = Quaternion.Euler(-22f, 0f, -2f);
+                    hipR = Quaternion.Euler(16f, 0f, 2f);
+                    knL = Quaternion.Euler(18f, 0f, 0f);
+                    knR = Quaternion.Euler(12f, 0f, 0f);
+                    break;
+                case 2:   // guard: arms crossed before the face
+                    head = Quaternion.Euler(10f, 0f, 0f);
+                    chest = Quaternion.Euler(-6f, 0f, 0f);
+                    PoseArm(GuardUpperL, GuardForeL, out shL, out elL);
+                    PoseArm(GuardUpperR, GuardForeR, out shR, out elR);
+                    hipL = Quaternion.Euler(0f, 0f, -6f);
+                    hipR = Quaternion.Euler(0f, 0f, 6f);
+                    knL = knR = Quaternion.identity;
+                    break;
+                default:  // standing at ease, weight on one leg
+                    hips = Quaternion.Euler(0f, 8f, 3f);
+                    chest = Quaternion.Euler(0f, -10f, -4f);
+                    head = Quaternion.Euler(8f, -20f, 0f);
+                    shL = Quaternion.Euler(4f, 0f, -7f);
+                    shR = Quaternion.Euler(-4f, 0f, 8f);
+                    elL = Quaternion.Euler(-18f, 0f, 0f);
+                    elR = Quaternion.Euler(-10f, 0f, 0f);
+                    hipL = Quaternion.Euler(-6f, 0f, -2f);
+                    hipR = Quaternion.Euler(4f, 0f, 5f);
+                    knL = Quaternion.Euler(12f, 0f, 0f);
+                    knR = Quaternion.identity;
+                    break;
+            }
+
+            // the same pivots as Build()
+            var mHips = Matrix4x4.TRS(new Vector3(0f, HipY, 0f), hips, Vector3.one);
+            var mChest = mHips * Matrix4x4.TRS(ChestPivot, chest, Vector3.one);
+            var mHead = mChest * Matrix4x4.TRS(HeadPivot, head, Vector3.one);
+            var mShL = mChest * Matrix4x4.TRS(new Vector3(-ShoulderX, ShoulderY, 0f), shL, Vector3.one);
+            var mShR = mChest * Matrix4x4.TRS(new Vector3(ShoulderX, ShoulderY, 0f), shR, Vector3.one);
+            var mElL = mShL * Matrix4x4.TRS(ElbowPivot, elL, Vector3.one);
+            var mElR = mShR * Matrix4x4.TRS(ElbowPivot, elR, Vector3.one);
+            var mHipL = Matrix4x4.TRS(new Vector3(-HipX, HipY, 0f), hipL, Vector3.one);
+            var mHipR = Matrix4x4.TRS(new Vector3(HipX, HipY, 0f), hipR, Vector3.one);
+            var mKnL = mHipL * Matrix4x4.TRS(KneePivot, knL, Vector3.one);
+            var mKnR = mHipR * Matrix4x4.TRS(KneePivot, knR, Vector3.one);
+
+            b.SetTransform(mHips); HipsShape(b, rng);
+            b.SetTransform(mChest); ChestShape(b, rng);
+            b.SetTransform(mHead); HeadShape(b, rng);
+            b.SetTransform(mShL); UpperArmShape(b, rng);
+            b.SetTransform(mShR); UpperArmShape(b, rng);
+            b.SetTransform(mElL); ForearmShape(b, rng);
+            b.SetTransform(mElR); ForearmShape(b, rng);
+            b.SetTransform(mHipL); ThighShape(b, rng);
+            b.SetTransform(mHipR); ThighShape(b, rng);
+            b.SetTransform(mKnL); ShinShape(b, rng);
+            b.SetTransform(mKnR); ShinShape(b, rng);
+            b.SetTransform(Matrix4x4.identity);
+            StatueMeshes[pose] = b.ToMesh($"Statue {pose}");
+            return StatueMeshes[pose];
+        }
+
+        static void PoseArm(Vector3 upperDir, Vector3 foreDir, out Quaternion shoulder, out Quaternion elbow)
+        {
+            shoulder = Quaternion.identity;
+            elbow = Quaternion.identity;
+            Pose(upperDir, foreDir, 1f, ref shoulder, ref elbow);
         }
     }
 }

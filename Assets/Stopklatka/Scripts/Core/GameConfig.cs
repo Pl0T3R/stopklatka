@@ -23,6 +23,12 @@ namespace Stopklatka
         public ShatterSettings shatter = new();
         [Tooltip("The 3 levels (waves of enemies), death and restart. Off = the old endless waves.")]
         public LevelSettings levels = new();
+        [Tooltip("White virtual props of the levels (GALERIA, ULICA, HOL), placed only where they can't hide a real obstacle.")]
+        public PropSettings props = new();
+        [Tooltip("The menu of black cubes to grab (START, level select, STYL, TRYB, WYJŚCIE).")]
+        public MenuSettings menu = new();
+        [Tooltip("World-space texts: TextMeshPro or the legacy fallback, where titles appear and how big.")]
+        public UiSettings ui = new();
         [Tooltip("Numbers for playing at school (big rooms and corridors).")]
         public ModeProfile school = ModeProfile.CreateSchool();
         [Tooltip("Numbers for playing at home (a whole house, smaller rooms).")]
@@ -365,20 +371,44 @@ namespace Stopklatka
         }
     }
 
-    /// <summary>A level: a name and its waves (props and rooms come in stage 6).</summary>
+    /// <summary>Which white props a level puts into the scanned rooms (STYLE_GUIDE 9).</summary>
+    public enum PropTheme
+    {
+        [Tooltip("By level number: 1 GALERIA, 2 ULICA, 3 HOL, then again.")]
+        Auto,
+        None,
+        Galeria,
+        Ulica,
+        Hol,
+    }
+
+    /// <summary>A level: a name, its props and its waves.</summary>
     [Serializable]
     public class LevelDefinition
     {
         [Tooltip("Shown when the level starts (Polish, plain letters).")]
         public string name = "POZIOM";
+        [Tooltip("The white props of this level (GameConfig props). Auto: by level number.")]
+        public PropTheme theme = PropTheme.Auto;
+        [Tooltip("How often enemies walk in through a scanned door frame in this level (above 0 overrides). 0 or less: the theme's default (HOL: props.elevatorDoorSpawnChance, others: enemies.doorSpawnChance).")]
+        [Range(-1f, 1f)] public float doorSpawnChance = -1f;
         public WaveDefinition[] waves = { new() };
 
         public LevelDefinition() { }
 
-        public LevelDefinition(string name, params WaveDefinition[] waves)
+        public LevelDefinition(string name, PropTheme theme, params WaveDefinition[] waves)
         {
             this.name = name;
+            this.theme = theme;
             this.waves = waves;
+        }
+
+        /// <summary>The theme, with Auto resolved by the 1-based level number.</summary>
+        public PropTheme ThemeFor(int level)
+        {
+            if (theme != PropTheme.Auto) return theme;
+            int i = (Mathf.Max(1, level) - 1) % 3;
+            return i == 0 ? PropTheme.Galeria : i == 1 ? PropTheme.Ulica : PropTheme.Hol;
         }
     }
 
@@ -405,19 +435,134 @@ namespace Stopklatka
         /// <summary>Three short levels of about 30 to 90 seconds, getting harder.</summary>
         public static LevelDefinition[] DefaultLevels() => new[]
         {
-            new LevelDefinition("GALERIA",
+            new LevelDefinition("GALERIA", PropTheme.Galeria,
                 new WaveDefinition(3, 2, 0.35f, 0f, 0f, 1),
                 new WaveDefinition(4, 3, 0.5f, 0f, 0f, 2),
                 new WaveDefinition(5, 3, 0.6f, 0.25f, 0f, 3)),
-            new LevelDefinition("ULICA",
+            new LevelDefinition("ULICA", PropTheme.Ulica,
                 new WaveDefinition(4, 3, 0.6f, 0.2f, 0.15f, 3),
                 new WaveDefinition(5, 4, 0.65f, 0.2f, 0.25f, 4),
                 new WaveDefinition(6, 4, 0.7f, 0.25f, 0.25f, 5)),
-            new LevelDefinition("HOL",
+            new LevelDefinition("HOL", PropTheme.Hol,
                 new WaveDefinition(5, 4, 0.7f, 0.25f, 0.25f, 5),
                 new WaveDefinition(6, 5, 0.75f, 0.25f, 0.3f, 6),
                 new WaveDefinition(7, 6, 0.8f, 0.25f, 0.35f, 8)),
         };
+    }
+
+    /// <summary>
+    /// The white props of the levels (stage 6). MR safety first: free-standing props only cover
+    /// scanned furniture (never larger than its footprint), wall props stay flat on free wall areas,
+    /// nothing in open floor space or near where you stand when a level starts.
+    /// </summary>
+    [Serializable]
+    public class PropSettings
+    {
+        [Tooltip("Off: levels have no props at all (the scanned room only).")]
+        public bool enabled = true;
+        [Tooltip("Most props per level (each is 1 or 2 draw calls).")]
+        public int maxProps = 14;
+        [Tooltip("Most props made from scanned furniture (plinths, statues, cars, the counter).")]
+        public int maxFurnitureProps = 6;
+        [Tooltip("Most props on walls (window light, half columns, lamp posts, rails, trims, elevator frames).")]
+        public int maxWallProps = 8;
+
+        [Header("Safety")]
+        [Tooltip("No prop closer than this (m, horizontally) to where you stand when the level starts.")]
+        public float minPlayerDistance = 1.5f;
+        [Tooltip("Free space (m) kept on both sides of door frames, windows and other things on a wall.")]
+        public float wallMargin = 0.2f;
+        [Tooltip("Deepest a wall prop may stick out of the wall (m).")]
+        [Range(0.02f, 0.2f)] public float maxWallDepth = 0.18f;
+        [Tooltip("Furniture counts only if its bottom is this close (m) to your floor; walls and doors likewise.")]
+        public float floorTolerance = 0.3f;
+        [Tooltip("Highest point (m above your floor) any prop may reach.")]
+        public float maxHeight = 2.3f;
+
+        [Header("Shapes")]
+        [Tooltip("Height (m) of a statue on a plinth (smaller on small furniture).")]
+        public float statueHeight = 0.75f;
+        [Tooltip("Width (m) of a window light panel on a wall.")]
+        public float windowWidth = 0.7f;
+        [Tooltip("How far (m) the pale light rectangle under a window reaches onto the floor.")]
+        public float floorLightDepth = 0.9f;
+        [Tooltip("Space (m) between two wall props on the same wall.")]
+        public float wallSpacing = 0.9f;
+
+        [Header("Transitions (real seconds)")]
+        [Tooltip("Props rise from the floor when a level starts.")]
+        public float revealSeconds = 1.2f;
+        [Tooltip("Props sink away when a level is cleared.")]
+        public float fadeSeconds = 0.9f;
+
+        [Header("HOL")]
+        [Tooltip("Door spawn chance in HOL levels (enemies walk out of the elevator frames).")]
+        [Range(0f, 1f)] public float elevatorDoorSpawnChance = 0.9f;
+
+        [Header("Haze (STYLE_GUIDE 4)")]
+        [Tooltip("Far props fade a little toward a light cyan. Only the props: the real room can't have fog.")]
+        public bool haze = true;
+        public Color hazeColor = new(0.867f, 0.937f, 0.957f, 1f);   // #DDEFF4
+        [Tooltip("Haze starts (m from your eyes) ...")]
+        public float hazeStart = 3f;
+        [Tooltip("... and is strongest here (m).")]
+        public float hazeEnd = 15f;
+        [Tooltip("How much of the haze color the farthest props take.")]
+        [Range(0f, 1f)] public float hazeStrength = 0.55f;
+    }
+
+    /// <summary>The menu (GAME_SPEC 8): black cubes in an arc in front of you, grabbed with the grip.</summary>
+    [Serializable]
+    public class MenuSettings
+    {
+        [Tooltip("On: black cubes to grab. Off: the old floating crystals you shoot (START, STYL, TRYB).")]
+        public bool useCubes = true;
+        [Tooltip("Edge length (m) of a menu cube, and of the START cube.")]
+        public float cubeSize = 0.13f, startCubeSize = 0.16f;
+        [Tooltip("Horizontal distance (m) from your head to the cubes. Keep it within arm's reach.")]
+        public float radius = 0.55f;
+        [Tooltip("How far (m) below your eyes the upper row (levels) and the lower row (START, STYL, TRYB, WYJŚCIE) float.")]
+        public float upperRowDrop = 0.3f, lowerRowDrop = 0.55f;
+        [Tooltip("Degrees between the level cubes, and between START and STYL / TRYB.")]
+        public float levelSpacing = 24f, toggleSpacing = 38f;
+        [Tooltip("Degrees to the right where WYJŚCIE floats (away from START).")]
+        public float exitAngle = 76f;
+        [Tooltip("Extra grab radius (m) around a cube.")]
+        public float grabRadius = 0.06f;
+        [Tooltip("Real seconds to grab WYJŚCIE a second time to really quit.")]
+        public float quitConfirmSeconds = 4f;
+    }
+
+    /// <summary>World-space texts (GAME_SPEC 6, STYLE_GUIDE 10).</summary>
+    [Serializable]
+    public class UiSettings
+    {
+        [Tooltip("TextMeshPro texts (needs TMP Essential Resources, imported by Build Game). Off, or the font missing: the legacy TextMesh texts.")]
+        public bool useTextMeshPro = true;
+        [Tooltip("Resources path of the TMP font (TMP Essentials). Its dynamic fallback adds Polish letters.")]
+        public string tmpFont = "Fonts & Materials/LiberationSans SDF";
+        [Tooltip("Resources path of the TMP material with underlay (drop shadow) and outline turned on.")]
+        public string tmpMaterial = "Fonts & Materials/LiberationSans SDF - Drop Shadow";
+        public Color shadowColor = new(0.04f, 0.04f, 0.06f, 0.6f);
+
+        [Header("Size (font height in m per m of distance)")]
+        public float titleSize = 0.07f;
+        public float subtitleSize = 0.03f;
+        [Tooltip("Font height (m) of the labels over the menu cubes.")]
+        public float labelSize = 0.022f;
+
+        [Header("Where titles appear (world-locked, never glued to your face)")]
+        [Tooltip("On the real wall in front of you when it is between these distances (m) ...")]
+        public float wallMinDistance = 1.5f, wallMaxDistance = 6f;
+        [Tooltip("... otherwise this far (m) ahead.")]
+        public float defaultDistance = 2.5f;
+        [Tooltip("Height (m) above your eyes.")]
+        public float aboveEyes = 0.15f;
+        [Tooltip("A new title stays at the old spot if that spot is within this angle (degrees) of your view.")]
+        public float keepAngle = 25f;
+        [Tooltip("A text that stays outside this angle (degrees) of your view for reanchorDelay real seconds moves in front of you again.")]
+        public float reanchorAngle = 70f;
+        public float reanchorDelay = 1.2f;
     }
 
     [Serializable]
@@ -465,5 +610,7 @@ namespace Stopklatka
         public bool wristTimeIndicator;
         [Tooltip("FPS readout at start (left thumbstick click toggles it anyway).")]
         public bool performanceReadout;
+        [Tooltip("Editor only (never in a build): when the device gives no scan, load this MRUK sample room so levels and props can be checked in Play mode. Empty = off.")]
+        public string editorSampleRoom = "Packages/com.meta.xr.mrutilitykit/Core/Rooms/Prefabs/LivingRoom/LivingRoom00.prefab";
     }
 }

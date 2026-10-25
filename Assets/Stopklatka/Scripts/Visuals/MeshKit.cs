@@ -15,9 +15,28 @@ namespace Stopklatka
             readonly List<Vector3> _v = new();
             readonly List<Vector3> _n = new();
             readonly List<int> _t = new();
+            Matrix4x4 _matrix = Matrix4x4.identity;
+            bool _hasMatrix;
+
+            /// <summary>
+            /// Moves everything added from now on by this matrix (e.g. a body part posed at its joint,
+            /// for the statues). Identity turns it off.
+            /// </summary>
+            public void SetTransform(Matrix4x4 matrix)
+            {
+                _matrix = matrix;
+                _hasMatrix = !matrix.isIdentity;
+            }
 
             public void Tri(Vector3 a, Vector3 b, Vector3 c, Vector3 shapeCenter)
             {
+                if (_hasMatrix)
+                {
+                    a = _matrix.MultiplyPoint3x4(a);
+                    b = _matrix.MultiplyPoint3x4(b);
+                    c = _matrix.MultiplyPoint3x4(c);
+                    shapeCenter = _matrix.MultiplyPoint3x4(shapeCenter);
+                }
                 var n = Vector3.Cross(b - a, c - a);
                 if (n.sqrMagnitude < 1e-12f) return;
                 if (Vector3.Dot(n, (a + b + c) / 3f - shapeCenter) < 0f) { (b, c) = (c, b); n = -n; }
@@ -82,6 +101,28 @@ namespace Stopklatka
                         Tri(to, b[j], b[i], center);
                     }
                 }
+            }
+
+            /// <summary>
+            /// Half of an upright N-sided prism, flat side at z = 0 (against a wall), round side toward +z:
+            /// half columns and posts that must not stick out more than their radius.
+            /// </summary>
+            public void HalfPrism(Vector3 baseCenter, float radius, float height, int segments)
+            {
+                if (segments < 2 || height <= 0f) return;
+                var center = baseCenter + new Vector3(0f, height * 0.5f, radius * 0.4f);
+                var up = Vector3.up * height;
+                for (int i = 0; i < segments; i++)
+                {
+                    float a0 = Mathf.PI * i / segments, a1 = Mathf.PI * (i + 1) / segments;
+                    var p0 = baseCenter + new Vector3(Mathf.Cos(a0) * radius, 0f, Mathf.Sin(a0) * radius);
+                    var p1 = baseCenter + new Vector3(Mathf.Cos(a1) * radius, 0f, Mathf.Sin(a1) * radius);
+                    Quad(p0, p1, p1 + up, p0 + up, center);                 // round side
+                    Tri(baseCenter, p0, p1, center);                         // bottom
+                    Tri(baseCenter + up, p0 + up, p1 + up, center);          // top
+                }
+                var r = new Vector3(radius, 0f, 0f);
+                Quad(baseCenter - r, baseCenter + r, baseCenter + r + up, baseCenter - r + up, center);   // back, on the wall
             }
 
             /// <summary>Icosahedron (20 facets) with per-axis radii: heads, shards, gems.</summary>

@@ -25,6 +25,12 @@ namespace Stopklatka
         public int NavAgentTypeId { get; private set; }
         public string Problem { get; private set; }
 
+        /// <summary>
+        /// The current level's door spawn chance (HOL: enemies walk out of the elevator frames).
+        /// Negative: GameConfig enemies.doorSpawnChance. Set by LevelManager.
+        /// </summary>
+        public float DoorSpawnOverride { get; set; } = -1f;
+
         SceneNavigation _nav;
         Transform _fallbackFloor;
 
@@ -53,8 +59,11 @@ namespace Stopklatka
             }
 
             var result = await mruk.LoadSceneFromDevice(requestSceneCaptureIfNoDataFound: true);
-            HasScan = mruk.Rooms.Count > 0;
             Debug.Log($"[Stopklatka] Scene load: {result}, rooms: {mruk.Rooms.Count}");
+#if UNITY_EDITOR
+            if (mruk.Rooms.Count == 0) await LoadEditorSampleRoom(mruk);
+#endif
+            HasScan = mruk.Rooms.Count > 0;
             if (!HasScan) Problem = "Nie znaleziono skanu. Zrób Space Setup tam, gdzie grasz (Ustawienia > Przestrzeń fizyczna).";
 
             if (HasScan)
@@ -68,6 +77,27 @@ namespace Stopklatka
             else CreateFallbackFloor();
             Ready = true;
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Editor only (never in a build): with no scan from the device (no Link, the XR Simulator
+        /// without a room), load one of MRUK's bundled sample rooms (GameConfig debug.editorSampleRoom)
+        /// so levels and props can be checked in Play mode.
+        /// </summary>
+        static async Task LoadEditorSampleRoom(MRUK mruk)
+        {
+            var path = GameConfig.Instance.debug.editorSampleRoom;
+            if (string.IsNullOrEmpty(path)) return;
+            var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[Stopklatka] Editor sample room not found at {path} (GameConfig debug.editorSampleRoom).");
+                return;
+            }
+            var result = await mruk.LoadSceneFromPrefab(prefab, clearSceneFirst: true);
+            Debug.Log($"[Stopklatka] Editor: no scan from the device, loaded the MRUK sample room {prefab.name} ({result}, rooms: {mruk.Rooms.Count}). Builds never do this.");
+        }
+#endif
 
         static readonly int FloorYId = Shader.PropertyToID("_StopklatkaFloorY");
 
@@ -168,7 +198,8 @@ namespace Stopklatka
         public bool TryFindEnemySpawn(Vector3 playerFloor, Vector3 viewDir, out Vector3 position)
         {
             float min = Tuning.EnemyMinSpawnDistance;
-            if (HasScan && Random.value < Tuning.DoorSpawnChance && TryDoorSpawn(playerFloor, min, out position)) return true;
+            float doorChance = DoorSpawnOverride >= 0f ? DoorSpawnOverride : Tuning.DoorSpawnChance;
+            if (HasScan && Random.value < doorChance && TryDoorSpawn(playerFloor, min, out position)) return true;
             var flatView = new Vector3(viewDir.x, 0f, viewDir.z);
             if (flatView.sqrMagnitude > 1e-4f && Random.value < Tuning.OutOfViewChance &&
                 TryFindEnemySpawn(playerFloor, min, flatView.normalized, out position)) return true;
@@ -288,7 +319,10 @@ namespace Stopklatka
                         if (!room.GenerateRandomPositionOnSurface(MRUK.SurfaceType.FACING_UP, 0.08f, LabelFilter.Included(surfaces), out var p, out _))
                             break;
                         float d = Vector3.Distance(p, playerFloor);
-                        if (d > 0.7f && d < maxDistance && p.y < playerFloor.y + 1.3f) return p + Vector3.up * 0.06f;
+                        // not where a level prop stands (a statue on a plinth): the surface itself isn't touched
+                        if (d > 0.7f && d < maxDistance && p.y < playerFloor.y + 1.3f &&
+                            !Physics.CheckSphere(p + Vector3.up * 0.13f, 0.07f, Layers.RoomMask, QueryTriggerInteraction.Ignore))
+                            return p + Vector3.up * 0.06f;
                     }
                 }
             }

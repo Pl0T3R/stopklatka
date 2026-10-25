@@ -18,6 +18,8 @@ namespace Stopklatka
         public const string DarkGlass = "GlassDark";            // the bottle and its shards
         public const string Statue = "StatueWhite";             // level props (stage 6): statues
         public const string PropWhite = "PropWhite";            // level props (stage 6): plinths, cars, counters
+        public const string WindowLight = "WindowLight";        // level props: soft white light panels on walls (vertex alpha)
+        public const string FloorLight = "FloorLight";          // level props: pale light rectangles on the floor
         public const string Target = "StartTarget";
         public const string EnemyTrail = "EnemyTrail";
         public const string PlayerTrail = "PlayerTrail";
@@ -49,7 +51,7 @@ namespace Stopklatka
 
         static Material CreateFallback(string name)
         {
-            bool transparent = name is EnemyTrail or PlayerTrail or Flash or RedFlash or FloorShadow or RingFx or Hidden or Glow;
+            bool transparent = name is EnemyTrail or PlayerTrail or Flash or RedFlash or FloorShadow or RingFx or Hidden or Glow or WindowLight or FloorLight;
             bool text = name == Text;
             var shader = Shader.Find(text ? "Stopklatka/Text" : transparent ? "Stopklatka/Transparent" : "Stopklatka/Crystal");
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
@@ -70,14 +72,14 @@ namespace Stopklatka
                 RedFlash => new Color(0.9f, 0.02f, 0.02f),
                 FloorShadow => Hex("#5E6E78"),
                 Hidden => Color.clear,
-                Glow => Color.white,                              // the meshes carry #FFD84D..#FF9A1F as vertex colors
+                Glow or WindowLight or FloorLight => Color.white, // Glow: the meshes carry #FFD84D..#FF9A1F as vertex colors
                 GlowShard => Hex("#FFD84D"),
                 _ => Color.white,
             };
             color.a = name switch
             {
                 EnemyTrail => 0.8f, PlayerTrail => 0.6f, Flash or RingFx => 0.85f, RedFlash => 0.6f,
-                FloorShadow => 0.38f, Hidden => 0f, _ => 1f,
+                FloorShadow => 0.38f, Hidden => 0f, WindowLight => 0.85f, FloorLight => 0.35f, _ => 1f,
             };
             m.SetColor("_BaseColor", color);
             if (!transparent && !text) m.SetColor("_ShadowColor", name == GlowShard ? Hex("#FF9A1F") : color * 0.5f);
@@ -87,7 +89,16 @@ namespace Stopklatka
                 m.SetColor("_HatchColor", Hex("#B80E0A"));
             }
             if (name == GlowShard) m.SetFloat("_Emission", 0.45f);
-            if (name is FloorShadow or RingFx) m.SetFloat("_OcclusionBias", 0.08f);
+            if (name is FloorShadow or RingFx or FloorLight) m.SetFloat("_OcclusionBias", 0.08f);
+            if (name == WindowLight) m.SetFloat("_OcclusionBias", 0.06f);
+            if (name is Statue or PropWhite)
+            {
+                // light cyan haze on far props (STYLE_GUIDE 4); LevelProps sets the GameConfig values at runtime
+                m.SetColor("_FogColor", Hex("#DDEFF4"));
+                m.SetFloat("_FogStart", 3f);
+                m.SetFloat("_FogEnd", 15f);
+                m.SetFloat("_FogStrength", 0.55f);
+            }
             if (name == EnemyReveal) m.EnableKeyword("_REVEAL");
             return m;
         }

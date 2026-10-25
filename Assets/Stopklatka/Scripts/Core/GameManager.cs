@@ -5,10 +5,13 @@ using UnityEngine;
 namespace Stopklatka
 {
     /// <summary>
-    /// Game flow: load the scan, menu (floating crystals), pause with plain passthrough if you walk
-    /// out of the scanned area. START hands the playing loop to <see cref="LevelManager"/> (3 levels
-    /// of waves, GameConfig levels). With levels.useLevels off, the old endless waves run here:
-    /// "STOP. KLATKA." when a wave is cleared, restart of the wave when you get hit.
+    /// Game flow: load the scan, the menu, pause with plain passthrough if you walk out of the scanned
+    /// area. The menu (GAME_SPEC 8) is black cubes to grab in an arc in front of you: START (the first
+    /// level not cleared yet), POZIOM 1/2/3 (level select, cleared ones marked), STYL, TRYB and WYJŚCIE
+    /// (grab twice to quit). GameConfig menu.useCubes off brings back the old crystals to shoot.
+    /// A level hands the playing loop to <see cref="LevelManager"/> (GameConfig levels). With
+    /// levels.useLevels off, the old endless waves run here: "STOP. KLATKA." when a wave is cleared,
+    /// restart of the wave when you get hit.
     /// </summary>
     [DefaultExecutionOrder(-30)]
     public class GameManager : MonoBehaviour
@@ -28,8 +31,9 @@ namespace Stopklatka
         readonly List<MenuTarget> _menuTargets = new();
         int _toSpawn;
         string _menuText = "", _menuProblem, _menuNote;
-        Vector3 _menuOrigin, _menuRight = Vector3.right;
-        float _nextSpawnAt, _outside, _inside;
+        Vector3 _menuOrigin, _menuRight = Vector3.right, _menuHead, _menuForward = Vector3.forward;
+        float _nextSpawnAt, _outside, _inside, _quitArmedUntil;
+        MenuTarget _exitCube;
         Coroutine _flow;
 
         void Awake()
@@ -39,6 +43,7 @@ namespace Stopklatka
             // scenes built before PlayerHealth / LevelManager existed get them here
             if (GetComponent<PlayerHealth>() == null) gameObject.AddComponent<PlayerHealth>();
             if (GetComponent<LevelManager>() == null) gameObject.AddComponent<LevelManager>();
+            if (GetComponent<LevelProps>() == null) gameObject.AddComponent<LevelProps>();
         }
 
         void OnDestroy()
@@ -75,7 +80,14 @@ namespace Stopklatka
             else if (Paused && _inside > 0.5f) SetPaused(false);
 
             if (OVRInput.GetDown(OVRInput.Button.Start, OVRInput.Controller.LTouch) && Current != State.Menu)
-                EnterMenu(null);
+                EnterMenu(_menuProblem);
+
+            // WYJŚCIE asks for a second grab within menu.quitConfirmSeconds
+            if (_quitArmedUntil > 0f && Time.unscaledTime > _quitArmedUntil)
+            {
+                _quitArmedUntil = 0f;
+                if (_exitCube != null) _exitCube.SetLabel(ExitLabel(false));
+            }
 
             if (Paused || Current != State.Playing) return;
 
@@ -98,41 +110,50 @@ namespace Stopklatka
         void EnterMenu(string problem)
         {
             StopFlow();
-            if (LevelManager.Instance != null) LevelManager.Instance.Stop();
+            if (LevelManager.Instance != null) LevelManager.Instance.Stop();   // also removes the level props
             ClearMenuTargets();
             Current = State.Menu;
             TimeController.Instance.SetMode(TimeController.Mode.Normal);
             ClearWorld(keepHeld: true);
+            _quitArmedUntil = 0f;
 
             var rig = PlayerRig.Instance;
             var head = rig.Head;
             var fwd = Flat(head.forward);
             var right = Vector3.Cross(Vector3.up, fwd);
-            float chest = head.position.y - 0.3f;
-            var basePos = new Vector3(head.position.x, chest, head.position.z) + fwd * 1.3f;
-
-            _menuOrigin = basePos;
+            _menuHead = head.position;
+            _menuForward = Tuning.Menu.useCubes ? OpenDirection(head.position, fwd) : fwd;
             _menuRight = right;
-            _menuTargets.Add(Factory.CreateMenuTarget("START", basePos, Mats.Target, 0.22f, StartGame));
-            SpawnStyleTarget();
-            SpawnModeTarget();
-
-            if (!PlayerHoldsGun())
-            {
-                var gunPos = head.position + fwd * 0.45f + right * 0.3f + Vector3.down * 0.45f;
-                var gun = Factory.CreateGun(GunKind.Pistol, gunPos, Quaternion.LookRotation(fwd));
-                gun.SetHovering(true);
-            }
-
             _menuProblem = problem;
+
+            if (Tuning.Menu.useCubes) SpawnMenuCubes();
+            else
+            {
+                // the old menu: crystals to shoot, with a pistol to shoot them
+                float chest = head.position.y - 0.3f;
+                var basePos = new Vector3(head.position.x, chest, head.position.z) + fwd * 1.3f;
+                _menuOrigin = basePos;
+                _menuTargets.Add(Factory.CreateMenuTarget("START", basePos, Mats.Target, 0.22f, StartGame));
+                SpawnStyleTarget();
+                SpawnModeTarget();
+                if (!PlayerHoldsGun())
+                {
+                    var gunPos = head.position + fwd * 0.45f + right * 0.3f + Vector3.down * 0.45f;
+                    var gun = Factory.CreateGun(GunKind.Pistol, gunPos, Quaternion.LookRotation(fwd));
+                    gun.SetHovering(true);
+                }
+            }
             ShowMenuText();
         }
 
         void ShowMenuText()
         {
+            string how = Tuning.Menu.useCubes
+                ? "Chwyć sześcian (grip): START, POZIOM, STYL, TRYB albo WYJŚCIE."
+                : "Weź pistolet (grip) i strzel w czerwony kryształ (spust).";
             _menuText = string.IsNullOrEmpty(_menuProblem)
-                ? $"Tryb: {GameMode.Profile.Label}. Czas płynie tylko, kiedy się ruszasz.\nWeź pistolet (grip) i strzel w czerwony kryształ (spust)."
-                : _menuProblem + "\nMożesz grać wokół siebie: strzel w czerwony kryształ.";
+                ? $"Tryb: {GameMode.Profile.Label}. Czas płynie tylko, kiedy się ruszasz.\n{how}"
+                : $"{_menuProblem}\nMożesz grać wokół siebie. {how}";
             if (!string.IsNullOrEmpty(_menuNote)) _menuText = _menuNote + "\n" + _menuText;
             Hud.Instance.Title("STOPKLATKA", 0f, Color.white);
             Hud.Instance.Sub(_menuText, 0f);
@@ -146,12 +167,19 @@ namespace Stopklatka
             ShowMenuText();
         }
 
-        /// <summary>START: the levels (GameConfig levels.useLevels), or the old endless waves.</summary>
+        /// <summary>START: the first level not cleared yet (GameConfig levels.useLevels), or the old endless waves.</summary>
         void StartGame()
         {
+            int count = LevelManager.LevelCount;
+            StartLevelOrWaves(Progress.FirstUnfinished(count));
+        }
+
+        void StartLevelOrWaves(int level)
+        {
             _menuNote = null;
+            _quitArmedUntil = 0f;
             var levels = LevelManager.Instance;
-            if (Tuning.Levels.useLevels && levels != null && LevelManager.LevelCount > 0) levels.StartLevel(1);
+            if (Tuning.Levels.useLevels && levels != null && LevelManager.LevelCount > 0) levels.StartLevel(level);
             else StartWave(1);
         }
 
@@ -160,29 +188,131 @@ namespace Stopklatka
         {
             StopFlow();
             ClearMenuTargets();
+            _quitArmedUntil = 0f;
             Current = State.Level;
         }
 
-        // Toggle crystals shatter when used, so each press spawns a fresh one in the same spot.
+        // --- the menu of cubes ------------------------------------------------------------
+
+        /// <summary>A spot on the menu arc: degrees to the right of where you looked, and metres below your eyes.</summary>
+        Vector3 MenuSpot(float degrees, float drop)
+        {
+            var dir = Quaternion.AngleAxis(degrees, Vector3.up) * _menuForward;
+            return new Vector3(_menuHead.x, _menuHead.y - drop, _menuHead.z) + dir * Tuning.Menu.radius;
+        }
+
+        /// <summary>
+        /// Upper row: POZIOM 1..n (level select). Lower row: STYL, START (bigger, in the middle), TRYB,
+        /// and WYJŚCIE further right, away from START.
+        /// </summary>
+        void SpawnMenuCubes()
+        {
+            var m = Tuning.Menu;
+            bool levels = Tuning.Levels.useLevels && LevelManager.LevelCount > 0;
+            if (levels)
+            {
+                int count = LevelManager.LevelCount;
+                for (int i = 1; i <= count; i++)
+                {
+                    int level = i;
+                    float degrees = (i - (count + 1) * 0.5f) * m.levelSpacing;
+                    _menuTargets.Add(Factory.CreateMenuCube(LevelLabel(level), MenuSpot(degrees, m.upperRowDrop), m.cubeSize,
+                        () => StartLevelOrWaves(level)));
+                }
+            }
+            string start = levels ? $"START\nPOZIOM {Progress.FirstUnfinished(LevelManager.LevelCount)}" : "START";
+            _menuTargets.Add(Factory.CreateMenuCube(start, MenuSpot(0f, m.lowerRowDrop), m.startCubeSize, StartGame));
+            SpawnStyleTarget();
+            SpawnModeTarget();
+            SpawnExitCube(armed: false);
+        }
+
+        /// <summary>
+        /// The cubes float within arm's reach, so they must not end up inside a real wall or cupboard:
+        /// the direction nearest to where you look with free room (scanned colliders) for the whole arc.
+        /// </summary>
+        static Vector3 OpenDirection(Vector3 head, Vector3 forward)
+        {
+            var m = Tuning.Menu;
+            float need = m.radius + 0.3f;
+            var origin = head + Vector3.down * Mathf.Min(m.lowerRowDrop, 0.5f);
+            foreach (float yaw in OpenYaws)
+            {
+                var dir = Quaternion.AngleAxis(yaw, Vector3.up) * forward;
+                if (Free(origin, dir, need) &&
+                    Free(origin, Quaternion.AngleAxis(-50f, Vector3.up) * dir, need) &&
+                    Free(origin, Quaternion.AngleAxis(Mathf.Max(50f, m.exitAngle), Vector3.up) * dir, need))
+                    return dir;
+            }
+            return forward;
+        }
+
+        static readonly float[] OpenYaws = { 0f, -45f, 45f, -90f, 90f, 135f, -135f, 180f };
+
+        static bool Free(Vector3 origin, Vector3 dir, float distance) =>
+            !Physics.Raycast(origin, dir, distance, Layers.RoomMask, QueryTriggerInteraction.Ignore);
+
+        static string LevelLabel(int level)
+        {
+            var def = Tuning.Levels.list[level - 1];
+            return Progress.IsDone(level) ? $"POZIOM {level}\n{def.name}\nZALICZONY" : $"POZIOM {level}\n{def.name}";
+        }
+
+        static string ExitLabel(bool armed) => armed ? "WYJŚCIE?\nCHWYĆ JESZCZE RAZ" : "WYJŚCIE";
+
+        void SpawnExitCube(bool armed)
+        {
+            var m = Tuning.Menu;
+            _quitArmedUntil = armed ? Time.unscaledTime + Mathf.Max(0.5f, m.quitConfirmSeconds) : 0f;
+            _exitCube = Factory.CreateMenuCube(ExitLabel(armed), MenuSpot(m.exitAngle, m.lowerRowDrop), m.cubeSize, () =>
+            {
+                if (Current != State.Menu) return;
+                if (_quitArmedUntil > 0f && Time.unscaledTime <= _quitArmedUntil) Quit();
+                else SpawnExitCube(armed: true);
+            });
+            _menuTargets.Add(_exitCube);
+        }
+
+        void Quit()
+        {
+            Debug.Log("[Stopklatka] WYJŚCIE: quitting.");
+            Hud.Instance.Title("DO ZOBACZENIA", 1f, Color.white, pulse: true);
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
+        // Toggles shatter when used, so each use spawns a fresh one in the same spot.
         void SpawnStyleTarget()
         {
-            var label = $"STYL: {(PassthroughStyle.Instance != null ? PassthroughStyle.Instance.Label : "BIAŁY")}";
-            _menuTargets.Add(Factory.CreateMenuTarget(label, _menuOrigin - _menuRight * 0.65f + Vector3.up * 0.05f, Mats.Glass, 0.14f, () =>
+            var label = $"STYL\n{(PassthroughStyle.Instance != null ? PassthroughStyle.Instance.Label : "BIAŁY")}";
+            void Cycle()
             {
-                PassthroughStyle.Instance?.Cycle();
+                if (PassthroughStyle.Instance != null) PassthroughStyle.Instance.Cycle();
                 if (Current == State.Menu) SpawnStyleTarget();
-            }));
+            }
+            if (Tuning.Menu.useCubes)
+                _menuTargets.Add(Factory.CreateMenuCube(label, MenuSpot(-Tuning.Menu.toggleSpacing, Tuning.Menu.lowerRowDrop), Tuning.Menu.cubeSize, Cycle));
+            else
+                _menuTargets.Add(Factory.CreateMenuTarget(label.Replace("\n", ": "), _menuOrigin - _menuRight * 0.65f + Vector3.up * 0.05f, Mats.Glass, 0.14f, Cycle));
         }
 
         void SpawnModeTarget()
         {
-            _menuTargets.Add(Factory.CreateMenuTarget($"TRYB: {GameMode.Profile.Label}", _menuOrigin + _menuRight * 0.65f + Vector3.up * 0.05f, Mats.Glass, 0.14f, () =>
+            var label = $"TRYB\n{GameMode.Profile.Label}";
+            void Toggle()
             {
                 GameMode.Toggle();
                 if (Current != State.Menu) return;
                 SpawnModeTarget();
                 ShowMenuText();
-            }));
+            }
+            if (Tuning.Menu.useCubes)
+                _menuTargets.Add(Factory.CreateMenuCube(label, MenuSpot(Tuning.Menu.toggleSpacing, Tuning.Menu.lowerRowDrop), Tuning.Menu.cubeSize, Toggle));
+            else
+                _menuTargets.Add(Factory.CreateMenuTarget(label.Replace("\n", ": "), _menuOrigin + _menuRight * 0.65f + Vector3.up * 0.05f, Mats.Glass, 0.14f, Toggle));
         }
 
         /// <summary>The old endless waves (GameConfig levels.useLevels off).</summary>
@@ -236,7 +366,8 @@ namespace Stopklatka
         void SetPaused(bool paused)
         {
             Paused = paused;
-            PassthroughStyle.Instance?.SetSafety(paused);
+            if (PassthroughStyle.Instance != null) PassthroughStyle.Instance.SetSafety(paused);
+            if (LevelProps.Instance != null) LevelProps.Instance.SetHidden(paused);   // plain passthrough: no props either
             if (paused)
             {
                 TimeController.Instance.SetMode(TimeController.Mode.Paused);
@@ -302,6 +433,7 @@ namespace Stopklatka
         {
             foreach (var t in _menuTargets) if (t != null) Destroy(t.gameObject);
             _menuTargets.Clear();
+            _exitCube = null;
         }
 
         static bool PlayerHoldsGun()

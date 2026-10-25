@@ -135,7 +135,17 @@ namespace Stopklatka
                 // pick the closest relative to its own radius, so a fast item isn't beaten by a resting one
                 if (d < radius && d / radius < bestScore) { bestScore = d / radius; best = g; }
             }
-            if (best != null) Take(best, caught: false);
+            if (best != null)
+            {
+                Take(best, caught: false);
+                return;
+            }
+
+            // nothing to pick up: a menu cube within reach is "taken" (it breaks and runs its action)
+            var cube = MenuTarget.FindGrabbable(point, Tuning.Menu.grabRadius);
+            if (cube == null) return;
+            Haptic(GameConfig.Instance.haptics.grab);
+            cube.Activate(Velocity.sqrMagnitude > 0.04f ? Velocity.normalized : Vector3.up);
         }
 
         /// <summary>Grip held with an empty hand: catch anything that flies into the hand.</summary>

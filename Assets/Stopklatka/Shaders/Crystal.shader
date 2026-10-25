@@ -5,6 +5,8 @@
 // The _REVEAL variant (enemy spawn-in) cuts the mesh above a height with a glowing edge.
 // Optional diagonal hatching (enemies): thin darker stripes at 45 degrees in object space, faded out
 // with distance so they never shimmer. A material value, not a keyword, so there are no extra variants.
+// Optional light cyan haze (level props): far surfaces fade toward _FogColor between _FogStart and
+// _FogEnd metres from the eye. Also a material value (_FogStrength 0 = off), no keyword.
 Shader "Stopklatka/Crystal"
 {
     Properties
@@ -25,6 +27,10 @@ Shader "Stopklatka/Crystal"
         _HatchColor("Hatch Color", Color) = (0.72, 0.055, 0.04, 1)
         _HatchStrength("Hatch Opacity", Range(0, 1)) = 0
         _HatchDensity("Hatch Stripes per Metre", Float) = 60
+        _FogColor("Haze Color", Color) = (0.867, 0.937, 0.957, 1)
+        _FogStart("Haze Start (m)", Float) = 3
+        _FogEnd("Haze End (m)", Float) = 15
+        _FogStrength("Haze Strength", Range(0, 1)) = 0
     }
 
     SubShader
@@ -70,6 +76,10 @@ Shader "Stopklatka/Crystal"
                 half4 _HatchColor;
                 half _HatchStrength;
                 float _HatchDensity;
+                half4 _FogColor;
+                float _FogStart;
+                float _FogEnd;
+                half _FogStrength;
             CBUFFER_END
 
             // Set by RoomService to the floor height of the room you're in.
@@ -142,6 +152,11 @@ Shader "Stopklatka/Crystal"
                 half spec = pow(saturate(dot(n, h)), _Gloss) * _SpecStrength;
                 half rim = pow(1.0h - saturate(dot(n, viewDir)), _RimPower) * _RimStrength;
                 color += _HighlightColor.rgb * spec + _RimColor.rgb * rim + _BaseColor.rgb * _Emission;
+
+                // light cyan haze with distance from the eye (level props only; 0 strength elsewhere)
+                float eyeDistance = length(GetWorldSpaceViewDir(i.positionWS));
+                half haze = (half)saturate((eyeDistance - _FogStart) / max(_FogEnd - _FogStart, 0.01)) * _FogStrength;
+                color = lerp(color, _FogColor.rgb, haze);
 
             #if defined(_REVEAL)
                 color += _RevealColor.rgb * (half)saturate(1.0 - below / 0.05) * 2.0h;

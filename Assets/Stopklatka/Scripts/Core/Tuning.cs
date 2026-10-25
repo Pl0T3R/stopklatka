@@ -131,7 +131,10 @@ namespace Stopklatka
         // Enemy death (see ShatterSettings)
         public static ShatterSettings Shatter => C.shatter;
 
-        // Levels (see LevelSettings)
+        // Levels (see LevelSettings), their props, the menu and texts
         public static LevelSettings Levels => C.levels;
+        public static PropSettings Props => C.props;
+        public static MenuSettings Menu => C.menu;
+        public static UiSettings Ui => C.ui;
     }
 }

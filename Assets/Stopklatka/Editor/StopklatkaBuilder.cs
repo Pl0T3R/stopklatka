@@ -40,6 +40,7 @@ namespace Stopklatka.EditorTools
             CreateMaterials();
             EnsureGameConfig();
             EnsureAudioMixer();
+            EnsureTextMeshPro();
             BuildScene();
             Debug.Log("[Stopklatka] Done. Next: Meta > Tools > Project Setup Tool > Fix All, then File > Build And Run.");
         }
@@ -150,8 +151,14 @@ namespace Stopklatka.EditorTools
             Crystal(Mats.DarkGlass, Hex("#22384A"), Hex("#0B141A"), Hex("#7FA3B8"), 0.9f, 1f, 96f, 0f, Hex("#C8D8E2"));
             // white crystals (menu toggles, wrist gauge tick, sparks) and white props for the levels (stage 6)
             Crystal(Mats.Glass, Hex("#F2F4F5"), Hex("#C7D1D6"), Color.white, 0.6f, 0.8f, 96f, 0.05f);
-            Crystal(Mats.Statue, Hex("#ECEFF0"), Hex("#D9E0E3"), Color.white, 0.3f, 0.2f, 16f, 0f);
-            Crystal(Mats.PropWhite, Hex("#F2F4F5"), Hex("#D3DCE0"), Color.white, 0.15f, 0.1f, 12f, 0f);
+            // statues and props (STYLE_GUIDE 3, 5): white with cool facets, and the light cyan haze of
+            // STYLE_GUIDE 4 (#DDEFF4) on far ones; LevelProps applies GameConfig props.haze* at runtime
+            var statue = Crystal(Mats.Statue, Hex("#ECEFF0"), Hex("#D9E0E3"), Color.white, 0.3f, 0.2f, 16f, 0f);
+            var prop = Crystal(Mats.PropWhite, Hex("#F2F4F5"), Hex("#D3DCE0"), Color.white, 0.15f, 0.1f, 12f, 0f);
+            foreach (var m in new[] { statue, prop }) Haze(m, Hex("#DDEFF4"), 3f, 15f, 0.55f);
+            // window light on walls (#FFFFFF, soft edges from vertex alpha) and its pale rectangle on the floor
+            Flat(Mats.WindowLight, WithAlpha(Hex("#FFFFFF"), 0.85f), 0.06f);   // 2 cm off the real wall: the bias keeps the wall from hiding it
+            Flat(Mats.FloorLight, WithAlpha(Hex("#FFFFFF"), 0.35f), 0.08f);
             Crystal(Mats.Target, Hex("#FF2B1C"), Hex("#9E0A08"), Hex("#FF8A7A"), 0.8f, 0.8f, 48f, 0.25f);
             // bullet streaks: enemy #FF1E1E at 80%, fading to clear at the tail; yours blue-black
             Flat(Mats.EnemyTrail, WithAlpha(Hex("#FF1E1E"), 0.8f));
@@ -189,8 +196,18 @@ namespace Stopklatka.EditorTools
             m.SetFloat("_SpecStrength", specStrength);
             m.SetFloat("_Gloss", gloss);
             m.SetFloat("_Emission", emission);
+            Haze(m, Hex("#DDEFF4"), 3f, 15f, 0f);   // no haze unless a prop material turns it on
             m.DisableKeyword("_REVEAL");
             return m;
+        }
+
+        /// <summary>The Crystal shader's haze: far surfaces fade toward color between start and end metres.</summary>
+        static void Haze(Material m, Color color, float start, float end, float strength)
+        {
+            m.SetColor("_FogColor", color);
+            m.SetFloat("_FogStart", start);
+            m.SetFloat("_FogEnd", end);
+            m.SetFloat("_FogStrength", strength);
         }
 
         /// <summary>A palette color from STYLE_GUIDE.md ("#RRGGBB", sRGB like the Inspector).</summary>
@@ -318,6 +335,34 @@ namespace Stopklatka.EditorTools
             }
         }
 
+        // --- TextMeshPro ------------------------------------------------------------------
+
+        const string TmpFontPath = "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset";
+
+        /// <summary>
+        /// Imports TMP Essential Resources (LiberationSans SDF, its dynamic fallback for Polish letters,
+        /// the drop-shadow material, TMP Settings) if they are missing. In Unity 6 TextMeshPro lives in
+        /// com.unity.ugui; older projects may have com.unity.textmeshpro. Without them the game uses
+        /// its legacy TextMesh texts (GameConfig ui).
+        /// </summary>
+        [MenuItem("Stopklatka/6. Import TextMeshPro Essentials (if missing)", priority = 25)]
+        public static void EnsureTextMeshPro()
+        {
+            if (AssetDatabase.LoadMainAssetAtPath(TmpFontPath) != null) return;
+            foreach (var package in new[] { "com.unity.ugui", "com.unity.textmeshpro" })
+            {
+                var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath($"Packages/{package}");
+                if (info == null || string.IsNullOrEmpty(info.resolvedPath)) continue;
+                var unityPackage = Path.Combine(info.resolvedPath, "Package Resources", "TMP Essential Resources.unitypackage");
+                if (!File.Exists(unityPackage)) continue;
+                AssetDatabase.ImportPackage(unityPackage, false);
+                Debug.Log($"[Stopklatka] Importing TMP Essential Resources from {package}. If texts still use the legacy font, run Build Game again once the import is done.");
+                return;
+            }
+            Debug.LogWarning("[Stopklatka] TMP Essential Resources not found in com.unity.ugui or com.unity.textmeshpro. " +
+                             "Import them by hand: Window > TextMeshPro > Import TMP Essential Resources. Until then the game uses its legacy texts.");
+        }
+
         const string ManualMixerSteps =
             "1. Project window: right-click Assets/Stopklatka/Resources/Audio > Create > Audio Mixer, name it StopklatkaMixer.\n" +
             "2. Window > Audio > Audio Mixer. Next to Groups click + three times (all under Master): World, UI, Ambient.\n" +
@@ -402,6 +447,7 @@ namespace Stopklatka.EditorTools
             game.AddComponent<PassthroughStyle>();
             game.AddComponent<GameManager>();
             game.AddComponent<LevelManager>();   // the playing loop (levels of waves); GameManager also adds it to older scenes
+            game.AddComponent<LevelProps>();     // the white props of each level (stage 6)
 
             SaveScene(scene, ScenePath);
             UseGameScene();

@@ -4,103 +4,47 @@ using UnityEngine;
 namespace Stopklatka
 {
     /// <summary>
-    /// World-space text that floats ahead of you, slightly above eye level (never in the lower
-    /// middle of your view, where you need to see the floor). Bold, with a dark drop shadow so it
-    /// stays readable over the bright, washed-out room. Also the red vignette when you get hit.
-    /// Uses the built-in font with a stereo-safe text shader.
+    /// Titles and subtitles in the world (GAME_SPEC 6, STYLE_GUIDE 10), never glued to your face: a new
+    /// title is put once at a fixed spot in front of you, on the real wall ahead when one is 1.5 to 6 m
+    /// away (GameConfig ui), else 2.5 m ahead, a little above eye level, and sized for that distance.
+    /// It stays there (turning only to face you) and only moves in front of you again when you have
+    /// looked away from it for a while. Bold, white or red, with a dark drop shadow (<see cref="WorldText"/>:
+    /// TextMeshPro, or the legacy TextMesh fallback). Also the red vignette when you get hit and the
+    /// debug readout (which does follow the head).
     /// </summary>
     public class Hud : MonoBehaviour
     {
         public static Hud Instance { get; private set; }
 
-        public Material TextMaterial => _textMat;
-
-        /// <summary>A text line and its drop shadow (a dark copy just behind it).</summary>
-        class Line
-        {
-            public TextMesh Main, Shadow;
-            public float Scale;
-
-            public string Text
-            {
-                get => Main.text;
-                set { Main.text = value; Shadow.text = value; }
-            }
-
-            public Color Color
-            {
-                set
-                {
-                    Main.color = value;
-                    Shadow.color = new Color(0.04f, 0.04f, 0.06f, 0.6f * value.a);
-                }
-            }
-        }
+        /// <summary>The legacy text material (the wrist gauge's label uses it).</summary>
+        public Material TextMaterial => WorldText.LegacyMaterial;
 
         static readonly Color Red = new(0.95f, 0.12f, 0.08f);
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
-        Line _title, _sub, _perf;
-        Transform _root;
-        Material _textMat;
-        Font _font;
+        WorldText _title, _sub, _perf;
+        Transform _anchor, _perfRoot;
         MeshRenderer _vignette;
         Color _vignetteColor;
-        float _titleUntil, _subUntil, _flashUntil, _flashLength, _pulseAt = -100f;
-        bool _snap = true;
+        float _titleUntil, _subUntil, _flashUntil, _flashLength, _pulseAt = -100f, _awayFor;
+        float _titleEm = 0.1f, _distance;
+        bool _placed, _snapPerf = true;
 
         void Awake()
         {
             Instance = this;
-            _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _textMat = new Material(Mats.Get(Mats.Text));
-            _textMat.mainTexture = _font.material.mainTexture;
-            Font.textureRebuilt += OnFontRebuilt;
-
-            _root = new GameObject("HUD").transform;
-            _title = MakeLine("Title", new Vector3(0f, 0.06f, 0f), 0.0085f, Red);
-            _sub = MakeLine("Subtitle", new Vector3(0f, -0.09f, 0f), 0.004f, new Color(0.97f, 0.97f, 0.97f));
-            _perf = MakeLine("Perf", new Vector3(0f, -0.24f, 0f), 0.003f, new Color(0.7f, 0.9f, 1f));
+            _anchor = new GameObject("HUD").transform;
+            _title = WorldText.Create("Title", _anchor, 0.1f, Red);
+            _sub = WorldText.Create("Subtitle", _anchor, 0.05f, new Color(0.97f, 0.97f, 0.97f), WorldText.Align.Top, 26f);
+            _perfRoot = new GameObject("HUD Perf").transform;
+            _perf = WorldText.Create("Perf", _perfRoot, 0.036f, new Color(0.7f, 0.9f, 1f), WorldText.Align.Top);
+            _perf.Transform.localPosition = new Vector3(0f, -0.24f, 0f);
         }
 
-        void OnDestroy() => Font.textureRebuilt -= OnFontRebuilt;
-
-        void OnFontRebuilt(Font f)
+        void OnDestroy()
         {
-            if (f == _font) _textMat.mainTexture = _font.material.mainTexture;
-        }
-
-        Line MakeLine(string name, Vector3 localPos, float scale, Color color)
-        {
-            var main = MakeText(name, _root, 1);
-            main.transform.localPosition = localPos;
-            main.transform.localScale = Vector3.one * scale;
-            // shadow: child of the text (follows its scale), a little down-right and behind; drawn first
-            var shadow = MakeText(name + " Shadow", main.transform, 0);
-            shadow.transform.localPosition = new Vector3(0.8f, -0.8f, 1f);   // ~7% of the glyph height
-            var line = new Line { Main = main, Shadow = shadow, Scale = scale };
-            line.Color = color;
-            return line;
-        }
-
-        TextMesh MakeText(string name, Transform parent, int order)
-        {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-            var tm = go.AddComponent<TextMesh>();
-            tm.font = _font;
-            tm.fontSize = 120;
-            tm.fontStyle = FontStyle.Bold;
-            tm.characterSize = 1f;
-            tm.anchor = TextAnchor.MiddleCenter;
-            tm.alignment = TextAlignment.Center;
-            tm.text = "";
-            var r = go.GetComponent<MeshRenderer>();
-            r.sharedMaterial = _textMat;
-            r.sortingOrder = order;
-            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            r.receiveShadows = false;
-            return tm;
+            if (_anchor != null) Destroy(_anchor.gameObject);
+            if (_perfRoot != null) Destroy(_perfRoot.gameObject);
         }
 
         /// <param name="seconds">0 = stays until replaced.</param>
@@ -111,13 +55,14 @@ namespace Stopklatka
             _title.Color = color ?? Red;
             _titleUntil = seconds > 0f ? Time.unscaledTime + seconds : float.MaxValue;
             if (pulse) _pulseAt = Time.unscaledTime;
-            _snap = true;
+            Place(force: false);
         }
 
         public void Sub(string text, float seconds = 3f)
         {
             _sub.Text = text;
             _subUntil = seconds > 0f ? Time.unscaledTime + seconds : float.MaxValue;
+            if (string.IsNullOrEmpty(_title.Text)) Place(force: false);
         }
 
         public void Perf(string text) => _perf.Text = text;
@@ -126,6 +71,39 @@ namespace Stopklatka
         {
             _title.Text = "";
             _sub.Text = "";
+        }
+
+        /// <summary>
+        /// Puts the titles at a fixed spot ahead: on the real wall in front (raycast against the scanned
+        /// room's colliders) if it is within ui.wallMin/MaxDistance, else ui.defaultDistance ahead.
+        /// Without force, a spot still within ui.keepAngle of your view is kept (no jumping between words).
+        /// </summary>
+        void Place(bool force)
+        {
+            var rig = PlayerRig.Instance;
+            if (rig == null) return;
+            var ui = Tuning.Ui;
+            var head = rig.Head;
+            var fwd = Flat(head.forward);
+            if (!force && _placed && Vector3.Angle(fwd, Flat(_anchor.position - head.position)) < ui.keepAngle &&
+                Mathf.Abs(Vector3.Distance(head.position, _anchor.position) - _distance) < 0.75f) return;
+
+            var origin = head.position + Vector3.up * ui.aboveEyes;
+            float distance = ui.defaultDistance;
+            if (Physics.Raycast(origin, fwd, out var hit, ui.wallMaxDistance, Layers.RoomMask, QueryTriggerInteraction.Ignore))
+            {
+                // on the wall when it is far enough, else just in front of whatever is close ahead
+                distance = hit.distance >= ui.wallMinDistance ? hit.distance - 0.08f : Mathf.Max(0.8f, Mathf.Min(distance, hit.distance - 0.08f));
+            }
+            _anchor.position = origin + fwd * distance;
+            _distance = distance;
+            _anchor.rotation = Quaternion.LookRotation(fwd, Vector3.up);
+            _titleEm = distance * ui.titleSize;
+            _title.EmHeight = _titleEm;
+            _sub.EmHeight = distance * ui.subtitleSize;
+            _sub.Transform.localPosition = new Vector3(0f, -_titleEm * 0.8f, 0f);
+            _placed = true;
+            _awayFor = 0f;
         }
 
         /// <summary>Red vignette around the edges of your view when you get hit.</summary>
@@ -167,16 +145,33 @@ namespace Stopklatka
             if (now > _subUntil) _sub.Text = "";
 
             var head = rig.Head;
-            var fwd = Vector3.ProjectOnPlane(head.forward, Vector3.up);
-            if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
-            fwd.Normalize();
-            var target = head.position + fwd * 1.7f + Vector3.up * 0.18f;
-            _root.position = _snap ? target : Vector3.Lerp(_root.position, target, 1f - Mathf.Exp(-3f * Time.unscaledDeltaTime));
-            _root.rotation = Quaternion.LookRotation(_root.position - head.position, Vector3.up);
-            _snap = false;
+            bool showing = _title.Text.Length > 0 || _sub.Text.Length > 0;
+            if (showing && _placed)
+            {
+                // world-locked: only turn to face you; move back in front of you after looking away a while
+                var ui = Tuning.Ui;
+                var toText = Flat(_anchor.position - head.position);
+                _anchor.rotation = Quaternion.LookRotation(toText, Vector3.up);
+                if (Vector3.Angle(Flat(head.forward), toText) > ui.reanchorAngle)
+                {
+                    _awayFor += Time.unscaledDeltaTime;
+                    if (_awayFor > ui.reanchorDelay) Place(force: true);
+                }
+                else _awayFor = 0f;
+            }
 
             float pulse = 1f + 0.22f * Mathf.Exp(-(now - _pulseAt) * 9f);
-            _title.Main.transform.localScale = Vector3.one * (_title.Scale * pulse);
+            _title.Transform.localScale = Vector3.one * pulse;
+
+            // debug readout: follows the head softly (debug only)
+            if (_perf.Text.Length > 0)
+            {
+                var target = head.position + Flat(head.forward) * 1.7f + Vector3.up * 0.18f;
+                _perfRoot.position = _snapPerf ? target : Vector3.Lerp(_perfRoot.position, target, 1f - Mathf.Exp(-3f * Time.unscaledDeltaTime));
+                _perfRoot.rotation = Quaternion.LookRotation(_perfRoot.position - head.position, Vector3.up);
+                _snapPerf = false;
+            }
+            else _snapPerf = true;
 
             if (_vignette != null)
             {
@@ -191,16 +186,28 @@ namespace Stopklatka
             }
         }
 
+        static Vector3 Flat(Vector3 v)
+        {
+            v.y = 0f;
+            return v.sqrMagnitude < 1e-4f ? Vector3.forward : v.normalized;
+        }
+
+        static void Chime()
+        {
+            var sound = SoundBank.Instance;
+            if (sound != null) sound.PlayUi(Sfx.Chime, 0.7f);
+        }
+
         /// <summary>Superhot-style chant: alternates two words with a chime, each one popping in.</summary>
         public IEnumerator Chant(string a, string b, int times)
         {
             for (int i = 0; i < times; i++)
             {
                 Title(a, 0.5f, Color.white, pulse: true);
-                SoundBank.Instance?.PlayUi(Sfx.Chime, 0.7f);
+                Chime();
                 yield return new WaitForSecondsRealtime(0.55f);
                 Title(b, 0.5f, Red, pulse: true);
-                SoundBank.Instance?.PlayUi(Sfx.Chime, 0.7f);
+                Chime();
                 yield return new WaitForSecondsRealtime(0.55f);
             }
         }

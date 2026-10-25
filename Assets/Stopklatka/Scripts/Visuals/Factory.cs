@@ -7,7 +7,7 @@ namespace Stopklatka
     /// <summary>Builds enemies, weapons, throwables, the player's fists and menu targets from code-generated meshes.</summary>
     public static class Factory
     {
-        static Mesh _pistol, _shotgun, _smg, _katanaHandle, _katanaBlade, _bottle, _mug, _ashtray, _block, _ball, _target;
+        static Mesh _pistol, _shotgun, _smg, _katanaHandle, _katanaBlade, _bottle, _mug, _ashtray, _block, _ball, _target, _menuCube;
         static Mesh _fistLeft, _fistRight;
 
         // Pose of a held gun relative to the controller anchor. Barrel follows the controller's forward axis.
@@ -256,7 +256,32 @@ namespace Stopklatka
             var rb = root.AddComponent<Rigidbody>();
             rb.isKinematic = true;
             var target = root.AddComponent<MenuTarget>();
-            target.Setup(label, visual.GetComponent<Renderer>(), onActivated);
+            target.Setup(label, visual.GetComponent<Renderer>(), onActivated, 0.24f, 0.034f);
+            return target;
+        }
+
+        /// <summary>
+        /// A black faceted menu cube (GAME_SPEC 8) with its label above: grab it with the grip (or punch,
+        /// shoot or cut it) and it breaks into black shards and runs the action. On the enemy layer like
+        /// the crystals, so bullets, the fist and the katana find it too.
+        /// </summary>
+        public static MenuTarget CreateMenuCube(string label, Vector3 position, float size, Action onActivated)
+        {
+            EnsureMeshes();
+            var root = new GameObject($"Menu {label}") { layer = Layers.Enemy };
+            root.transform.position = position;
+            var visual = MeshKit.Part("Cube", root.transform, _menuCube, Mats.Get(Mats.Weapon));
+            visual.layer = Layers.Enemy;
+            visual.transform.localScale = Vector3.one * size;
+            visual.transform.localRotation = Quaternion.Euler(0f, UnityEngine.Random.Range(0f, 90f), 0f);
+            root.AddComponent<BoxCollider>().size = Vector3.one * (size * 1.1f);
+            var rb = root.AddComponent<Rigidbody>();
+            rb.isKinematic = true;
+            var target = root.AddComponent<MenuTarget>();
+            target.TouchActivates = false;
+            target.Grabbable = true;
+            target.Size = size * 0.5f;
+            target.Setup(label, visual.GetComponent<Renderer>(), onActivated, size * 0.5f + 0.035f, Tuning.Ui.labelSize);
             return target;
         }
 
@@ -339,6 +364,11 @@ namespace Stopklatka
             var t = new MeshKit.Builder();
             t.Octahedron(Vector3.zero, 0.5f, 0.75f);
             _target = t.ToMesh("Target");
+
+            // unit menu cube: slightly irregular facets, like the throwable block
+            var mc = new MeshKit.Builder();
+            mc.Box(Vector3.zero, Vector3.one, Quaternion.identity, 0.94f, 0.025f, rng);
+            _menuCube = mc.ToMesh("Menu Cube");
         }
     }
 }

@@ -2,7 +2,7 @@
 
 Stopklatka is a Superhot-style mixed reality game for Meta Quest 3, built with Unity. The player walks around the real school or home they scanned with Space Setup, holding Touch controllers. Time moves only when they move. Red crystal enemies appear inside the scanned rooms.
 
-The menu has three crystals: START, STYL (passthrough look: NORMALNY / BIAŁY / SUPERHOT) and TRYB (SZKOŁA / DOM). Both choices are saved in `PlayerPrefs`. Home mode (`Scripts/Core/GameMode.cs`) is for a whole house of about 150 m² with several rooms and maybe floors: closer spawns, fewer enemies at once, slower enemy bullets.
+The menu is a set of black cubes you grab with the grip, floating in an arc in front of you: START (the first level not cleared yet), POZIOM 1 / 2 / 3 (level select; cleared levels say ZALICZONY), STYL (passthrough look: NORMALNY / BIAŁY / SUPERHOT), TRYB (SZKOŁA / DOM) and WYJŚCIE (grab twice to quit). STYL, TRYB and the cleared levels are saved in `PlayerPrefs`. `menu.useCubes` off in GameConfig brings back the old crystals you shoot. Each of the 3 levels puts its own white props (GALERIA, ULICA, HOL) into the scanned rooms, only where they can't hide a real obstacle. Home mode (`Scripts/Core/GameMode.cs`) is for a whole house of about 150 m² with several rooms and maybe floors: closer spawns, fewer enemies at once, slower enemy bullets.
 
 The owner (Pl0T3R) speaks Polish, so talk to them in Polish. Code, comments and commit messages stay in English.
 
@@ -41,6 +41,7 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
    - In the "Optional Meta XR SDKs" window, add **MR Utility Kit**. It pulls in `com.unity.ai.navigation`.
    - If the setup tool refuses because `Assets/` already exists, create the project in a temporary folder, then copy `Assets/Stopklatka`, `CLAUDE.md`, `docs/` and `.mcp.json` into it.
 2. **Build the game content.** In Unity, run the menu **Stopklatka → Build Game (settings + materials + scene)**. Then run **Meta → Tools → Project Setup Tool → Fix All** for Android.
+   - Build Game also imports **TMP Essential Resources** if they're missing (**Stopklatka → 6. Import TextMeshPro Essentials**). The import finishes after the menu command returns; check that `Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset` exists, else use Window → TextMeshPro → Import TMP Essential Resources.
    - Check that OpenXR has the Meta Quest feature group enabled and that the render mode is **Multi-view**.
    - Check that the only scene in Build Settings is `Assets/Stopklatka/Scenes/Stopklatka.unity`. **Stopklatka → Build Settings: Game Scene** sets it. **Stopklatka → Build Time Test Scene** switches the build to the time test scene; switch back before building the game.
 3. **Compile to zero errors and zero warnings.** Fix what breaks while keeping the design in `docs/PLAN.md`. Re-run Stopklatka → Build Game after changing the builder.
@@ -88,7 +89,26 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 - [ ] Unarmed enemies walk up (never run), pull the arm back visibly, then punch.
 - [ ] Your bullet passing close to an enemy, or a neighbour dying, makes it raise its arms before its face for about 0.7 s and lose its aim.
 - [ ] Spawns: often just inside a scanned door frame on your floor (as if walking in through the door), otherwise sometimes outside your view. Never closer than 2.5 m at school and 1.8 m at home (1.2 m in tiny rooms), always inside a scanned room.
-- [ ] Levels (`levels.useLevels` on, default): START shows "POZIOM 1" and "GALERIA", then waves ("FALA 2/3", "FALA 3/3"). Clearing the last wave: "STOP." / "KLATKA." twice, "POZIOM 1 ZALICZONY", then level 2 (ULICA), level 3 (HOL). After level 3: "KONIEC", then the menu with "Wszystkie poziomy zaliczone".
+- [ ] Levels (`levels.useLevels` on, default): START shows "POZIOM 1" and "GALERIA", then waves ("FALA 2/3", "FALA 3/3"). Clearing the last wave: "STOP." / "KLATKA." twice, "POZIOM 1 ZALICZONY", then level 2 (ULICA), level 3 (HOL). After level 3: "KONIEC", then the menu with "Wszystkie poziomy zaliczone" (or which levels are still to clear, if you started from level 2 or 3).
+- [ ] Menu (stage 6): black faceted cubes (13 cm, START 16 cm) at chest height within arm's reach, each with a white bold label: upper row POZIOM 1 / 2 / 3 (with the level name), lower row STYL, START, TRYB and WYJŚCIE further right. If you stand close to a wall, the arc turns toward free space (never inside a wall or cupboard).
+  - Grip on a cube: it breaks into black shards with a sound and a grab haptic, and does its thing. A fast punch, a bullet or a katana cut work too. Touching it without the grip does nothing.
+  - STYL and TRYB come back at once with the new value. POZIOM n starts that level.
+  - START starts the first level not cleared yet (its label says which). Cleared levels show "ZALICZONY" on their cube and survive an app restart. When all are cleared, START starts level 1.
+  - WYJŚCIE: the first grab turns it into "WYJŚCIE? CHWYĆ JESZCZE RAZ" for 4 s (`menu.quitConfirmSeconds`); a second grab in that time quits the app, otherwise it goes back to "WYJŚCIE".
+  - `menu.useCubes` off: the old menu (red START crystal, white STYL / TRYB crystals, a hovering pistol to shoot them).
+- [ ] Level props (stage 6): when a level starts, white props rise from the floor with a glowing edge (about 1.2 s); when it's cleared they sink back into the floor during "POZIOM n ZALICZONY". The log shows `Props GALERIA: n on furniture, m on walls (scan on your floor: ...)`.
+  - GALERIA: white blocks exactly over scanned furniture (STORAGE, TABLE, OTHER, COUCH, BED) with small white statues of the enemy figure on top (three poses), half columns and tall soft white "window light" panels on free walls, with a pale light rectangle on the floor below.
+  - ULICA: white cars over couches, beds and big furniture (always smaller than the furniture), white blocks over the rest, lamp posts and bar rails flat against walls, a facade trim high on a few walls.
+  - HOL: a reception counter over the largest table, white blocks over other furniture, half columns, and elevator frames around scanned door frames. Enemies mostly walk out of those doors (`props.elevatorDoorSpawnChance` 0.9).
+  - Bullets stop at props (except the light panels), enemies can't see through them, thrown items bounce off. Pickups never land inside a statue.
+  - With `props.enabled` off, no scan, or an empty room, the level plays the same without props.
+- [ ] Prop safety (walk the level and check each rule):
+  - Every free-standing prop covers only a real piece of furniture: walk around each one and make sure no part sticks out past the real furniture. Things on or under the furniture may be hidden; anything sticking out in front of a prop still shows (Depth API).
+  - Wall props stick out at most 18 cm (`props.maxWallDepth`), never cover a door frame, window or other scanned wall item (20 cm margin), never sit where furniture stands against the wall, and nothing ever goes across or above a door opening; elevator frames stand beside the opening and the doorway stays clear.
+  - Nothing new in open floor space (the floor light is a flat, see-through decal without a collider) and nothing within 1.5 m of where you stood when the level started.
+  - Nothing on stairs or on another storey. Nothing taller than 2.3 m above your floor.
+  - Walking out of the scan (pause) hides every prop together with the game. The menu has no props.
+- [ ] Haze: far props (from about 3 m, strongest at 15 m) take on a light cyan tint (`#DDEFF4`, `props.haze*`); enemies, weapons and your hands never do.
 - [ ] Death in a level: one hit gives the red vignette and "TRAFIONY", the world almost stops, the view doesn't move, and about 1.5 s later the level restarts from its first wave (enemies, bullets and debris cleared, new pickups).
 - [ ] With `levels.useLevels` off: the old endless waves (FALA 1, 2, 3...) as before, now with SMG enemies too.
 - [ ] Leaving the scan during a level pauses it (the restart and wave timers wait too).
@@ -98,9 +118,19 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 - [ ] STYL SUPERHOT maps the room onto the white palette (cool grey shadows to white), and the edges of real furniture, steps and door frames are still easy to see.
 - [ ] Sound (stage 5): the log shows `Audio: mixer StopklatkaMixer, world pitch in the mixer`. Shots, shatters and thuds drop in pitch when time slows (down to about 35%), UI chimes never do. Standing still in a fight there is a low hum; moving fades it out and brings in a quiet airy rush. Both are silent in the menu and while paused. Without the mixer (see below) the pitch still follows time, set per sound.
 - [ ] HUD and menu labels are bold with a dark drop shadow, readable over a white room. "STOP." / "KLATKA." pop in.
+- [ ] Texts (stage 6): the log shows `Texts: TextMeshPro (LiberationSans SDF)`. Polish letters (ą ć ę ł ń ó ś ź ż) show in every text, white or red with a soft dark shadow and a thin dark outline. Titles are not glued to your face: a new title appears once in front of you, on the real wall ahead if it is 1.5 to 6 m away, else 2.5 m ahead, a little above eye level, and stays there (it only turns to face you). Look away for more than about 1.2 s and it moves in front of you again. The FPS readout (debug) still follows your head.
+- [ ] Text fallback: with `ui.useTextMeshPro` off (or the TMP font missing) the log shows `Texts: legacy TextMesh` and every text still shows, with the old drop shadow.
 - [ ] STYL cycles NORMALNY → BIAŁY → SUPERHOT. Pausing (leaving the scan) always shows plain passthrough.
 - [ ] TRYB switches SZKOŁA ↔ DOM and the menu subtitle shows the mode. Both survive an app restart.
 - [ ] Home mode with several rooms: bullets and enemies' line of sight pass through doorways (MRUK cuts `DOOR_FRAME` holes in the wall colliders). Enemies only spawn on the floor you're on.
+
+### Editor check without a headset scan (stage 6)
+
+Play the game scene in the Editor (Meta XR Simulator, or Quest Link without a scan).
+- [ ] The log shows `Editor: no scan from the device, loaded the MRUK sample room LivingRoom00`, then the menu cubes appear in front of the camera.
+- [ ] Start each level from its cube and look at the props in the Scene view (they're named Plinth, Statue, Car, Counter, HalfColumn, WindowLight, FloorLight, LampPost, Rail, Trim, ElevatorFrame). Turn on the MRUK scene debugger or the EffectMesh visuals to compare them with the room's anchors: every Plinth/Car/Counter/Statue inside a furniture box, wall props flat on walls and clear of door and window anchors.
+- [ ] Try other rooms through `GameConfig.debug.editorSampleRoom` (e.g. `.../Prefabs/Office/Office03.prefab`, `.../Other/OtherRoom07_Cluttered.prefab`, `.../Other/OtherRoom04_empty.prefab`: no props, the level still plays).
+- [ ] In a build, the log never mentions the sample room.
 
 ### Time test scene (stage 2)
 
@@ -151,17 +181,22 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
   - `levels`: `useLevels` (off = endless waves), `restartDelay` (1.5 s), intro, wave gap, spawn interval, chant repeats, pickups, and the 3 levels with their waves (enemies, alive at once, armed / shotgun / SMG shares, difficulty 1..9),
   - `school` / `home`: per-mode numbers (spawn distances, enemies at once and per wave, enemy speed and bullet speed, how often enemies spawn in your room). The factory defaults are in `Scripts/Core/GameMode.cs`,
   - `performance`: refresh rate (90 or 120), foveation,
-  - `debug`: the wrist time gauge and the FPS readout at start.
+  - `debug`: the wrist time gauge, the FPS readout at start, and `editorSampleRoom` (the MRUK sample room loaded in the Editor when there is no scan; empty = off),
+  - `props` (stage 6): on/off, how many (`maxProps` 14, `maxFurnitureProps` 6, `maxWallProps` 8), the safety distances (`minPlayerDistance` 1.5 m, `wallMargin` 0.2 m, `maxWallDepth` 0.18 m, `floorTolerance`, `maxHeight` 2.3 m), shapes (statue height, window width, floor light depth, wall spacing), the rise and sink times, HOL's door spawn chance and the haze (color, start, end, strength),
+  - `menu` (stage 6): cubes or crystals, cube sizes, the arc (radius, row heights, angles), extra grab radius, quit confirm time,
+  - `ui` (stage 6): TMP on/off, the TMP font and material, shadow color, title / subtitle / label sizes, where titles appear (wall distances, default distance, height, keep and re-anchor angles),
+  - `levels.list[n].theme` (GALERIA / ULICA / HOL / None / Auto) and `doorSpawnChance` per level.
 - `Scripts/Visuals/Factory.cs`:
   - `GunHoldPosition` / `GunHoldEuler`: if guns sit tilted in the hand, fix this first,
   - the katana and throwable hold poses (`CreateKatana`, `CreateThrowable`),
   - `FistPosition` / `FistEuler`: where the black fist sits on the controller (right hand; the left is mirrored). Thumb on top by default.
 - `Scripts/Enemies/EnemyBody.cs`: body proportions (`EnsureMeshes`, rings are height, x radius, z radius, z offset), the guard and punch wind-up poses (`GuardUpperR/ForeR/...`, `WindupUpperR/ForeR`, directions in the chest's frame), the cut-face sizes (`CrossSection`). These are guesses made without a headset.
-- `Scripts/UI/Hud.cs` and `MenuTarget.cs`: text scale. TextMesh sizes are estimates.
+- `Scripts/UI/Hud.cs` and `MenuTarget.cs`: text scale. TextMesh sizes are estimates. Sizes now come from GameConfig `ui` (font height per metre of distance for titles, metres for cube labels); `WorldText` converts them (TMP: font size 1 = 0.1 m; legacy: about 12 units per line). The TMP drop shadow and outline values are in `WorldText.Init`.
 - `Scripts/World/PassthroughStyle.cs`: the BIAŁY (`SetBrightnessContrastSaturation`) and SUPERHOT (gradient color map) looks. Keep them moderate for safety.
 - `Editor/StopklatkaBuilder.cs` → `CreateMaterials`: all colors as hex values from `STYLE_GUIDE.md` (lit and shadow tone, rim, highlight color and strength, gloss, hatching). Re-run Stopklatka → Build Game after changing them. `Mats.CreateFallback` has the same colors for a project without the material assets.
 - `Shaders/Crystal.shader`: light direction (`_LightDir`), the two-tone step (`smoothstep(0.3, 0.7, ...)`), the darkening near the floor (`_FloorShade`) and the hatching (`_HatchStrength`, `_HatchDensity`, `_HatchColor`; the line width 0.14 and the distance fade `1.6 - aa * 2.5` in the fragment shader).
 - `GameConfig` → `visuals` (streak lengths) and `sound` (mixer on/off, pitch at slow and full time, hum and ambient volumes, response, ambient dB).
+- `Scripts/World/LevelProps.cs`: what each theme puts where (`BuildGaleria`, `BuildUlica`, `BuildHol`: which furniture becomes a car or a counter, statue rules, how wall props alternate). `Scripts/World/PropPlanner.cs`: the safety geometry (which anchors block a wall, 0.45 m for furniture in front of a wall, 0.6 m storey tolerance). `Scripts/Visuals/PropKit.cs`: the prop shapes (plinth, counter, car, half column, lamp post, rail, trim, elevator frame, light panels). `Enemies/EnemyBody.cs` → `StatueMesh`: the three statue poses.
 - `Editor/StopklatkaBuilder.cs`:
   - the dynamic resolution range (`quest3Min/MaxDynamicResolutionScale` = 1.0 / 1.205),
   - which scene labels become colliders (`EffectMesh.Labels`) and NavMesh obstacles.
@@ -188,4 +223,8 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
 - **Shader errors** in `Shaders/*.shader` (URP HLSL with Meta's occlusion include) show up as pink materials. Fix the shaders before anything else.
 - **Fist and hand poses** (`Factory.FistPosition/FistEuler`, hold poses) are guesses made without a headset. If the fist doesn't sit over the real hand, or punches register too easily while walking (hand speed includes walking), tune the pose and `player.punchKillSpeed` / `punchStunSpeed` first.
 - **Haptics:** Touch Plus vibrations shorter than about 20 ms may be too weak to feel; if the empty-gun double tick is not noticeable, raise `haptics.emptyClick.seconds` or `amplitude`.
+- **TextMeshPro (stage 6):** in Unity 6 TMP is part of `com.unity.ugui` 2.0 (namespace `TMPro`); the project must have that package (every Unity 6 template does). The code was checked against the `com.unity.textmeshpro` 3.2.0-pre.15 sources, which uGUI 2.0's TMP is built from; `TextMeshPro`, `TMP_FontAsset`, `FontStyles`, `TextAlignmentOptions`, `TextWrappingModes` and `TextOverflowModes` are the only TMP types used. Texts load `Resources/Fonts & Materials/LiberationSans SDF` and copy `LiberationSans SDF - Drop Shadow` (underlay + outline on, so those shader variants ship); its dynamic fallback asset adds Polish letters at runtime. If the font is missing, everything falls back to the legacy TextMesh. If text is invisible or pink, check that the Essentials were imported into `Assets/TextMesh Pro`.
+- **Prop placement (stage 6)** uses `MRUKRoom.Anchors`, `FloorAnchors`, `IsPositionInRoom`, `IsPositionInSceneVolume` and `MRUKAnchor.PlaneRect` / `VolumeBounds` (MRUK 207 sources). Box axes are read from the anchor transforms (the axis closest to vertical is the height), and a wall's inside is the side where a point 30 cm away is in its room, so no assumption about MRUK's local axes. If props float, sink or face the wrong way, check this first in the Scene view with the MRUK scene debugger. Props are not part of the NavMesh: enemies walk by the scanned furniture they cover anyway; wall props are at most 18 cm deep.
+- **Prop reveal and haze:** props rise with copies of the `PropWhite` / `StatueWhite` materials with the `_REVEAL` keyword (the variant ships because `EnemyReveal` uses it) and go back to the plain copies afterwards. The haze is computed in `Crystal.shader` from the distance to the eye (`_FogColor`, `_FogStart`, `_FogEnd`, `_FogStrength`, material values, no keyword); every other material has `_FogStrength` 0. If the shader fails to compile (pink), check this block.
+- **Editor sample rooms:** in the Editor only, when the device gives no rooms, `RoomService` loads `GameConfig.debug.editorSampleRoom` (default MRUK's `LivingRoom00` prefab) with `MRUK.LoadSceneFromPrefab`. It's behind `#if UNITY_EDITOR` and uses `AssetDatabase`, so builds never contain or load it. The player starts at the room's origin, which may be close to furniture: some props may be skipped for being within 1.5 m.
 - **Safety:** enemies spawn only inside scanned rooms, at least 2.5 m away at school and 1.8 m at home (1.2 m at the very least in tiny rooms). Keep it that way. Don't add mechanics that need running or fast backing up.

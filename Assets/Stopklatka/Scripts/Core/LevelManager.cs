@@ -5,14 +5,16 @@ namespace Stopklatka
 {
     /// <summary>
     /// The playing loop (GAME_SPEC 8): levels made of waves, defined in GameConfig levels.
-    ///   start: level name, pickups around you, then the waves one after another,
-    ///   end: the last wave cleared -> "STOP." / "KLATKA." -> the next level; after the last level,
-    ///        back to the menu with a message,
+    ///   start: the level's white props rise from the floor in your scanned rooms (<see cref="LevelProps"/>),
+    ///          its name, pickups around you, then the waves one after another,
+    ///   end: the last wave cleared -> "STOP." / "KLATKA." -> "POZIOM n ZALICZONY" while the props sink
+    ///        away -> the next level; after the last level "KONIEC" and back to the menu. A cleared
+    ///        level is remembered (<see cref="Progress"/>),
     ///   death: one hit -> red flash, "TRAFIONY", the world nearly stops (no camera movement),
-    ///          and the level restarts from its first wave after levels.restartDelay (1.5 s).
-    /// A level here is only its waves; props and rooms per level come in stage 6. GameManager keeps
-    /// boot, the scan, the menu and the pause (walking out of the scan pauses this loop too).
-    /// With levels.useLevels off, GameManager runs the old endless waves instead.
+    ///          and the level restarts from its first wave after levels.restartDelay (1.5 s); the props stay.
+    /// No camera movement and no fade to black anywhere: the real room stays visible.
+    /// GameManager keeps boot, the scan, the menu and the pause (walking out of the scan pauses this
+    /// loop too). With levels.useLevels off, GameManager runs the old endless waves instead.
     /// </summary>
     [DefaultExecutionOrder(-20)]
     public class LevelManager : MonoBehaviour
@@ -79,13 +81,15 @@ namespace Stopklatka
             Run(Intro(restart));
         }
 
-        /// <summary>Stops the loop (back to the menu). Enemies and debris are cleared by GameManager.</summary>
+        /// <summary>Stops the loop (back to the menu). Enemies and debris are cleared by GameManager; the props go here.</summary>
         public void Stop()
         {
             StopFlow();
             Current = Phase.Idle;
             _toSpawn = 0;
             if (PlayerHealth.Instance != null) PlayerHealth.Instance.Invulnerable = false;
+            if (LevelProps.Instance != null) LevelProps.Instance.ClearNow();
+            SetDoorSpawns(-1f);
         }
 
         /// <summary>Called when the pause ends: the right time mode for this phase.</summary>
@@ -104,11 +108,16 @@ namespace Stopklatka
             SetInvulnerable(true);
             SetTime(TimeController.Mode.Normal);
             var gm = GameManager.Instance;
-            if (gm != null)
-            {
-                gm.ClearWorld(keepHeld: true);
-                gm.SpawnPickups(Settings.pickupsPerLevel);
-            }
+            if (gm != null) gm.ClearWorld(keepHeld: true);
+
+            // the level's props rise from the floor; a restart keeps the ones already standing
+            var theme = Definition.ThemeFor(Level);
+            var props = LevelProps.Instance;
+            if (props != null && !(restart && props.BuiltLevel == Level)) props.Build(Level, theme);
+            SetDoorSpawns(Definition.doorSpawnChance > 0f ? Definition.doorSpawnChance
+                : theme == PropTheme.Hol ? Tuning.Props.elevatorDoorSpawnChance : -1f);
+            // after the props, so pickups don't land inside a statue
+            if (gm != null) gm.SpawnPickups(Settings.pickupsPerLevel);
 
             float seconds = Mathf.Max(0.3f, restart ? Settings.introSeconds * 0.5f : Settings.introSeconds);
             Hud.Instance.Title($"POZIOM {Level}", seconds, Red, pulse: true);
@@ -173,9 +182,12 @@ namespace Stopklatka
             Current = Phase.Cleared;
             SetInvulnerable(true);
             SetTime(TimeController.Mode.Normal);
+            Progress.MarkDone(Level);
             yield return Hud.Instance.Chant("STOP.", "KLATKA.", Mathf.Max(1, Settings.chantRepeats));
             Hud.Instance.Title($"POZIOM {Level} ZALICZONY", 1.8f, Color.white, pulse: true);
-            yield return WaitReal(2f);
+            // the props sink back into the floor while the title shows
+            if (LevelProps.Instance != null) LevelProps.Instance.FadeOut();
+            yield return WaitReal(Mathf.Max(2f, Tuning.Props.fadeSeconds));
             if (Level < LevelCount)
             {
                 _flow = null;   // don't let StartLevel stop this coroutine mid-call
@@ -183,15 +195,23 @@ namespace Stopklatka
                 yield break;
             }
 
-            // all levels done: back to the menu (stage 6 adds level select)
+            // the last level: the end, then the menu (its level cubes show what is cleared)
+            bool all = Progress.AllDone(LevelCount);
             Hud.Instance.Title("KONIEC", 2.5f, Red, pulse: true);
-            Hud.Instance.Sub("Wszystkie poziomy zaliczone.", 2.5f);
+            Hud.Instance.Sub(all ? "Wszystkie poziomy zaliczone." : $"Do zaliczenia: {Progress.Unfinished(LevelCount)}.", 2.5f);
             yield return WaitReal(2.5f);
             _flow = null;
             Current = Phase.Idle;
             SetInvulnerable(false);
             if (GameManager.Instance != null)
-                GameManager.Instance.ReturnToMenu($"Wszystkie poziomy zaliczone ({LevelCount}). START zaczyna od nowa.");
+                GameManager.Instance.ReturnToMenu(all
+                    ? $"Wszystkie poziomy zaliczone ({LevelCount}). START zaczyna od nowa."
+                    : $"Do zaliczenia: {Progress.Unfinished(LevelCount)}. START zaczyna pierwszy z nich.");
+        }
+
+        static void SetDoorSpawns(float chance)
+        {
+            if (RoomService.Instance != null) RoomService.Instance.DoorSpawnOverride = chance;
         }
 
         void PlayerHit(Vector3 point)
