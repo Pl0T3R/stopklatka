@@ -3,6 +3,8 @@
 // darkening near the floor. No real-time lights or shadows needed, so it stays cheap at 120 Hz.
 // Supports Meta Depth API occlusion (real people and furniture hide what's behind them).
 // The _REVEAL variant (enemy spawn-in) cuts the mesh above a height with a glowing edge.
+// Optional diagonal hatching (enemies): thin darker stripes at 45 degrees in object space, faded out
+// with distance so they never shimmer. A material value, not a keyword, so there are no extra variants.
 Shader "Stopklatka/Crystal"
 {
     Properties
@@ -20,6 +22,9 @@ Shader "Stopklatka/Crystal"
         _FloorShade("Darkening Near Floor", Range(0, 1)) = 0.35
         _RevealY("Reveal Height (world)", Float) = 1000
         _RevealColor("Reveal Edge Color", Color) = (1, 0.85, 0.75, 1)
+        _HatchColor("Hatch Color", Color) = (0.72, 0.055, 0.04, 1)
+        _HatchStrength("Hatch Opacity", Range(0, 1)) = 0
+        _HatchDensity("Hatch Stripes per Metre", Float) = 60
     }
 
     SubShader
@@ -62,6 +67,9 @@ Shader "Stopklatka/Crystal"
                 half _FloorShade;
                 float _RevealY;
                 half4 _RevealColor;
+                half4 _HatchColor;
+                half _HatchStrength;
+                float _HatchDensity;
             CBUFFER_END
 
             // Set by RoomService to the floor height of the room you're in.
@@ -79,6 +87,7 @@ Shader "Stopklatka/Crystal"
                 float4 positionCS : SV_POSITION;
                 float3 positionWS : TEXCOORD0;
                 half3 normalWS : TEXCOORD1;
+                float2 hatchOS : TEXCOORD2;   // object-space x and y, for the hatching
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
@@ -92,6 +101,7 @@ Shader "Stopklatka/Crystal"
                 o.positionWS = TransformObjectToWorld(v.positionOS.xyz);
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
+                o.hatchOS = v.positionOS.xy;
                 return o;
             }
 
@@ -117,6 +127,16 @@ Shader "Stopklatka/Crystal"
                 // a little darker near the floor: grounds objects in the real room
                 half height = (half)saturate((i.positionWS.y - _StopklatkaFloorY) / 0.6);
                 color *= lerp(1.0h - _FloorShade, 1.0h, height);
+
+                // hatching: stripe coordinate along the 45 degree diagonal, one unit per stripe.
+                // fwidth (stripes per pixel) smooths the edges, and the hatching fades out as the stripes
+                // shrink on screen (full above ~4 px per stripe, gone below ~1.5 px), so it only shows up close.
+                float stripe = (i.hatchOS.x + i.hatchOS.y) * 0.70710678 * _HatchDensity;
+                float aa = max(fwidth(stripe), 1e-4);
+                float d = abs(frac(stripe) - 0.5);                     // 0 at the stripe's center
+                half stripeMask = (half)(1.0 - smoothstep(0.14 - aa, 0.14 + aa, d));
+                half nearFade = (half)saturate(1.6 - aa * 2.5);
+                color = lerp(color, _HatchColor.rgb, stripeMask * nearFade * _HatchStrength);
 
                 half3 h = normalize(l + viewDir);
                 half spec = pow(saturate(dot(n, h)), _Gloss) * _SpecStrength;

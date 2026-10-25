@@ -115,7 +115,8 @@ namespace Stopklatka
         /// <summary>The tell before an enemy shot: a small glint at the muzzle (game time, so it lingers in slow motion).</summary>
         public static void AimGlint(Vector3 position, Vector3 direction)
         {
-            var f = GlowFlashes.Get(position, Quaternion.LookRotation(direction.sqrMagnitude > 1e-6f ? direction : Vector3.forward));
+            // white, not yellow: the yellow-orange accent is only for enemies breaking (STYLE_GUIDE 1)
+            var f = Flashes.Get(position, Quaternion.LookRotation(direction.sqrMagnitude > 1e-6f ? direction : Vector3.forward));
             f.Show(0.045f, Mathf.Max(0.08f, Tuning.AimTellSeconds * 0.6f));
         }
 

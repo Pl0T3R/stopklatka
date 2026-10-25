@@ -64,7 +64,7 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
   - bottle: breaks and stuns.
 - [ ] An empty gun clicks on every trigger pull: a click sound plus two short sharp haptic ticks, clearly different from the single strong buzz of a shot.
 - [ ] Thrown items with `combat.killOnThrow` off (default): a fast throw staggers the enemy and knocks its gun out, it doesn't kill. A thrown katana still kills (`thrownBladeKills`). With `killOnThrow` on: above `throwKillSpeed` it kills, bottles, mugs and ashtrays always kill.
-- [ ] Throwables: bottle (white glass), mug and ashtray (black, break into dark shards), block and ball (black, bounce). All stun.
+- [ ] Throwables: bottle (dark smoky glass, dark glass shards), mug and ashtray (black, break into dark shards), block and ball (black, bounce). All stun.
 - [ ] Fist: an empty hand shows a black faceted fist over the controller, hidden while holding something. A punch faster than about 2 m/s shatters the enemy (punch sound, strong haptic). A slower push (1 to 2 m/s) only staggers it and knocks its gun out. Slower contact does nothing.
 - [ ] Shooting bullets down: your bullet passing within about 5 cm of an enemy bullet destroys both with a small flash and a high "clink".
 - [ ] Catching: hold the grip with an empty hand and a flying item (a thrown bottle, a gun dropped by a dying or stunned enemy) is caught when it reaches the hand, with a stronger haptic. Pressing the grip just as it passes also works.
@@ -77,13 +77,13 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 - [ ] Without a scan or with the permission denied, the game still runs around the player and shows a message.
 - [ ] No pink materials: every shader in `Shaders/` compiles for Android/Vulkan with multiview.
 - [ ] Enemies form from the floor up with a glowing edge, over a red ring spreading on the floor. Their gun pops in when the edge reaches the hand. After 0.9 s they use the shared `EnemyCrystal` material again (check in the Frame Debugger that enemies batch).
-- [ ] Enemies have a soft dark shadow on the floor. It isn't hidden by the real floor (that's what `_OcclusionBias` 0.08 is for) and is hidden behind real walls.
-- [ ] Bullet streaks fade toward the tail. Enemy streaks are red and up to 1.6 m long, player streaks dark and up to 0.8 m.
+- [ ] Enemies have a soft cool grey-blue shadow on the floor (about `#B9C6CC` over a white floor, never black). It isn't hidden by the real floor (that's what `_OcclusionBias` 0.08 is for) and is hidden behind real walls.
+- [ ] Bullet streaks are about 1 cm thick along their whole length, solid for the front 60% and fading to clear at the tail. Enemy streaks are bright red (`#FF1E1E`) and up to 3.5 m long (`visuals.enemyStreakLength`), yours blue-black and up to 1 m.
 - [ ] Enemy look (STYLE_GUIDE 6): about 1.8 m, broad pointed shoulders, narrow waist, long legs, a long narrow faceless head, block hands. 11 parts plus the floor shadow: about 12 draw calls per enemy (13 with a gun), and they batch (Frame Debugger).
 - [ ] Kills (any: bullet, throw with `killOnThrow`, thrown katana): a short yellow flash at the hit, the hit part and parts close to it burst into 30 to 60 small red shards (tetrahedra and flakes, two reds, some glowing yellow), the other limbs and the torso fall as big chunks with a flat yellow-orange cap where they broke, roll to a stop lying flat, and shrink away after about 4 s of game time. In slow time everything hangs in the air.
 - [ ] Katana: the enemy is cut in half along the swing. Each half has a flat glowing cross-section at the cut, the upper half flies off along the swing, the legs mostly stay, a fan of shards sprays from the cut line, and after about 1.3 s of game time both halves burst into shards. A stab (no sideways swing) shatters instead.
 - [ ] Fist kill: glowing cracks spread from the knuckles over the hit part for about 0.25 s of game time while the enemy trembles, then it shatters. Bullets pass through it while it cracks.
-- [ ] Armed enemies: the gun arm rises slowly while they take aim, then a tell before every shot (they stop walking, a small yellow glint at the muzzle and a click), then the shot. Every shot can be dodged with a step or a lean.
+- [ ] Armed enemies: the gun arm rises slowly while they take aim, then a tell before every shot (they stop walking, a small white glint at the muzzle and a click), then the shot. Every shot can be dodged with a step or a lean.
 - [ ] SMG enemies (from level 2, and from wave 4 in endless mode) fire 3-round bursts, all at where your head was when the burst started, with a little spread.
 - [ ] Unarmed enemies walk up (never run), pull the arm back visibly, then punch.
 - [ ] Your bullet passing close to an enemy, or a neighbour dying, makes it raise its arms before its face for about 0.7 s and lose its aim.
@@ -93,6 +93,10 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 - [ ] With `levels.useLevels` off: the old endless waves (FALA 1, 2, 3...) as before, now with SMG enemies too.
 - [ ] Leaving the scan during a level pauses it (the restart and wave timers wait too).
 - [ ] Getting hit shows a red vignette at the edges of the view, not a flat red quad.
+- [ ] Colors match `STYLE_GUIDE.md` (stage 5): enemies `#FF2B1C` lit / `#9E0A08` shadow with a pink-red rim; weapons, throwables and the fist blue-black (`#1E3242` / `#0B141A`) with a navy-teal sheen on the edges; the katana blade black with a steel-grey edge; muzzle flashes white; yellow-orange only where enemies break.
+- [ ] Hatching: up close (under about 3 m) enemies show thin darker diagonal stripes (45°, about 60 per metre, `#B80E0A` at 25%). Further away the stripes fade out smoothly, no shimmering or moiré when you move your head. Weapons have none.
+- [ ] STYL SUPERHOT maps the room onto the white palette (cool grey shadows to white), and the edges of real furniture, steps and door frames are still easy to see.
+- [ ] Sound (stage 5): the log shows `Audio: mixer StopklatkaMixer, world pitch in the mixer`. Shots, shatters and thuds drop in pitch when time slows (down to about 35%), UI chimes never do. Standing still in a fight there is a low hum; moving fades it out and brings in a quiet airy rush. Both are silent in the menu and while paused. Without the mixer (see below) the pitch still follows time, set per sound.
 - [ ] HUD and menu labels are bold with a dark drop shadow, readable over a white room. "STOP." / "KLATKA." pop in.
 - [ ] STYL cycles NORMALNY → BIAŁY → SUPERHOT. Pausing (leaving the scan) always shows plain passthrough.
 - [ ] TRYB switches SZKOŁA ↔ DOM and the menu subtitle shows the mode. Both survive an app restart.
@@ -127,6 +131,11 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
   - Punch it fast: glowing cracks over the hit part, then the shatter.
   - Shoot past it without hitting: it guards for a moment.
   - Stand still right after a kill: shards and chunks hang in the air.
+- [ ] Stage 5 (look and sound):
+  - Up close the enemy shows the diagonal hatching; step back and it fades out without shimmering.
+  - The turret's streak is a long (up to 3.5 m) thin red line, solid near the bullet and fading at the tail.
+  - Standing still: a low hum, and the turret shot sounds slow and deep. Move: the hum fades, a quiet airy rush comes in, shots sound normal.
+  - The bottle is dark glass; the katana blade is black with a light edge.
 - [ ] Afterwards: **Stopklatka → Build Settings: Game Scene**.
 
 ## Where to tune (most likely needed on the real device)
@@ -150,8 +159,9 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
 - `Scripts/Enemies/EnemyBody.cs`: body proportions (`EnsureMeshes`, rings are height, x radius, z radius, z offset), the guard and punch wind-up poses (`GuardUpperR/ForeR/...`, `WindupUpperR/ForeR`, directions in the chest's frame), the cut-face sizes (`CrossSection`). These are guesses made without a headset.
 - `Scripts/UI/Hud.cs` and `MenuTarget.cs`: text scale. TextMesh sizes are estimates.
 - `Scripts/World/PassthroughStyle.cs`: the BIAŁY (`SetBrightnessContrastSaturation`) and SUPERHOT (gradient color map) looks. Keep them moderate for safety.
-- `Editor/StopklatkaBuilder.cs` → `CreateMaterials`: all colors (lit and shadow tone, rim, highlight, gloss). Re-run Stopklatka → Build Game after changing them.
-- `Shaders/Crystal.shader`: light direction (`_LightDir`), the two-tone step (`smoothstep(0.3, 0.7, ...)`) and the darkening near the floor (`_FloorShade`).
+- `Editor/StopklatkaBuilder.cs` → `CreateMaterials`: all colors as hex values from `STYLE_GUIDE.md` (lit and shadow tone, rim, highlight color and strength, gloss, hatching). Re-run Stopklatka → Build Game after changing them. `Mats.CreateFallback` has the same colors for a project without the material assets.
+- `Shaders/Crystal.shader`: light direction (`_LightDir`), the two-tone step (`smoothstep(0.3, 0.7, ...)`), the darkening near the floor (`_FloorShade`) and the hatching (`_HatchStrength`, `_HatchDensity`, `_HatchColor`; the line width 0.14 and the distance fade `1.6 - aa * 2.5` in the fragment shader).
+- `GameConfig` → `visuals` (streak lengths) and `sound` (mixer on/off, pitch at slow and full time, hum and ambient volumes, response, ambient dB).
 - `Editor/StopklatkaBuilder.cs`:
   - the dynamic resolution range (`quest3Min/MaxDynamicResolutionScale` = 1.0 / 1.205),
   - which scene labels become colliders (`EffectMesh.Labels`) and NavMesh obstacles.
@@ -166,6 +176,14 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
 - **Death effects** (`Enemies/Shatter.cs`, `Debris.cs`, `Cracks.cs`): big chunks are copies of the dead enemy's part meshes in pooled debris (`EnemyCrystal`, batched), and the glowing caps, cut faces, cracks and the kill flash use the new `FractureGlow` material (`Stopklatka/Transparent`, white) with the colors in the meshes' vertex colors (linear values of `#FFD84D` / `#FF9A1F`). If the glow looks washed out or too dark, check the color space (must be Linear) before touching the colors. Glowing shards use the new `ShardGlow` material (`Stopklatka/Crystal`). Chunks move on their own (no Rigidbody): they bounce on the enemy's floor height but pass through real walls; they only fly about a metre. A kill spawns up to about 20 chunk and cap pieces and 60 shards; the pools are created while the scan loads (`Shatter.Prewarm`). Watch `metavr perf` when 3 or more enemies die at once.
 - **Katana cut plane** = blade direction × swing direction. Each body part goes whole to one side, so the cut always falls between parts (neck, waist, hips, shoulders, knees); the glowing face is placed where that half's parts end. Very vertical cuts get a tall face down the body. If faces float away from the halves, tune `EnemyBody.CrossSection` or switch the cut off (`shatter.katanaCutsInHalf`).
 - **Door spawns** use `MRUKRoom.Anchors` with the `DOOR_FRAME` label. Both sides of each frame are tried and only a side inside a scanned room, on your floor, at the allowed distance and connected by the NavMesh is used, so the frame's facing direction doesn't matter. Without door frames in the scan, spawns fall back to random floor spots.
+- **Audio mixer:** Unity has no public API to build an AudioMixer, so **Stopklatka → 5. Create Audio Mixer** (also run by Build Game) calls the editor's internal `AudioMixerController` by reflection, the same steps as Unity's Audio Mixer window (checked against the 6000.0.85 editor DLL). It makes `Resources/Audio/StopklatkaMixer.mixer` with groups World, UI and Ambient under Master and exposes `WorldPitch` (World pitch, 1.0 = 100%) and `AmbientVolume` (Ambient volume, dB). If it fails, the log says why and prints these manual steps; the game meanwhile sets the pitch per sound:
+  1. Project window: right-click `Assets/Stopklatka/Resources/Audio` → Create → Audio Mixer, name it `StopklatkaMixer`.
+  2. Window → Audio → Audio Mixer. Next to Groups click + three times (all under Master): `World`, `UI`, `Ambient`.
+  3. Select the World group. In the Inspector, right-click Pitch → Expose "Pitch (of World)" to script.
+  4. Select the Ambient group. Right-click Volume → Expose "Volume (of Ambient)" to script.
+  5. In the Audio Mixer window, top right: Exposed Parameters. Rename them `WorldPitch` and `AmbientVolume`.
+  6. Save (Ctrl+S). `SoundBank` finds the mixer and the groups by name.
+- **Hatching** is computed in `Crystal.shader` from object-space position with `fwidth` antialiasing (one extra interpolator, no new keyword or variant). If it shimmers on the headset, lower `_HatchStrength` or raise the fade (`1.6 - aa * 2.5`); if the shader fails to compile (pink), check this block first.
 - **Boundary suppression** works only while the passthrough layer is active. `PassthroughStyle.Update` keeps it in sync.
 - **Shader errors** in `Shaders/*.shader` (URP HLSL with Meta's occlusion include) show up as pink materials. Fix the shaders before anything else.
 - **Fist and hand poses** (`Factory.FistPosition/FistEuler`, hold poses) are guesses made without a headset. If the fist doesn't sit over the real hand, or punches register too easily while walking (hand speed includes walking), tune the pose and `player.punchKillSpeed` / `punchStunSpeed` first.

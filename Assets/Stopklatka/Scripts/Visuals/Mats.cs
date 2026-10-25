@@ -14,7 +14,10 @@ namespace Stopklatka
         public const string EnemyReveal = "EnemyReveal";        // spawn-in variant (_REVEAL keyword)
         public const string Weapon = "WeaponBlack";
         public const string Blade = "KatanaBlade";
-        public const string Glass = "GlassWhite";
+        public const string Glass = "GlassWhite";               // white crystals: menu toggles, gauge tick, sparks
+        public const string DarkGlass = "GlassDark";            // the bottle and its shards
+        public const string Statue = "StatueWhite";             // level props (stage 6): statues
+        public const string PropWhite = "PropWhite";            // level props (stage 6): plinths, cars, counters
         public const string Target = "StartTarget";
         public const string EnemyTrail = "EnemyTrail";
         public const string PlayerTrail = "PlayerTrail";
@@ -42,6 +45,8 @@ namespace Stopklatka
             return m;
         }
 
+        static Color Hex(string hex) => ColorUtility.TryParseHtmlString(hex, out var c) ? c : Color.magenta;
+
         static Material CreateFallback(string name)
         {
             bool transparent = name is EnemyTrail or PlayerTrail or Flash or RedFlash or FloorShadow or RingFx or Hidden or Glow;
@@ -49,27 +54,38 @@ namespace Stopklatka
             var shader = Shader.Find(text ? "Stopklatka/Text" : transparent ? "Stopklatka/Transparent" : "Stopklatka/Crystal");
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
             var m = new Material(shader) { name = name, enableInstancing = true };
+            // the same STYLE_GUIDE colors as StopklatkaBuilder.CreateMaterials, without the finer settings
             var color = name switch
             {
-                Enemy or EnemyReveal => new Color(0.92f, 0.13f, 0.09f),
-                EnemyDark => new Color(0.62f, 0.05f, 0.05f),
-                Weapon => new Color(0.1f, 0.1f, 0.11f),
-                Blade => new Color(0.85f, 0.87f, 0.9f),
-                Glass => new Color(0.9f, 0.95f, 0.97f),
-                Target => new Color(0.98f, 0.16f, 0.1f),
-                EnemyTrail => new Color(1f, 0.12f, 0.08f, 0.75f),
-                PlayerTrail => new Color(0.08f, 0.08f, 0.1f, 0.6f),
-                Flash => new Color(1f, 0.92f, 0.65f, 0.9f),
-                RedFlash => new Color(0.9f, 0.02f, 0.02f, 0.6f),
-                FloorShadow => new Color(0.04f, 0.04f, 0.06f, 0.42f),
-                RingFx => new Color(1f, 0.12f, 0.08f, 0.85f),
-                Hidden => new Color(0f, 0f, 0f, 0f),
+                Enemy or EnemyReveal or Target or RingFx => Hex("#FF2B1C"),
+                EnemyDark => Hex("#9E0A08"),
+                Weapon => Hex("#1E3242"),
+                Blade => Hex("#1A2630"),
+                DarkGlass => Hex("#22384A"),
+                Glass or PropWhite => Hex("#F2F4F5"),
+                Statue => Hex("#ECEFF0"),
+                EnemyTrail => Hex("#FF1E1E"),
+                PlayerTrail => Hex("#0B141A"),
+                Flash => Color.white,
+                RedFlash => new Color(0.9f, 0.02f, 0.02f),
+                FloorShadow => Hex("#5E6E78"),
+                Hidden => Color.clear,
                 Glow => Color.white,                              // the meshes carry #FFD84D..#FF9A1F as vertex colors
-                GlowShard => new Color(1f, 0.847f, 0.302f),       // #FFD84D
+                GlowShard => Hex("#FFD84D"),
                 _ => Color.white,
             };
+            color.a = name switch
+            {
+                EnemyTrail => 0.8f, PlayerTrail => 0.6f, Flash or RingFx => 0.85f, RedFlash => 0.6f,
+                FloorShadow => 0.38f, Hidden => 0f, _ => 1f,
+            };
             m.SetColor("_BaseColor", color);
-            if (!transparent && !text) m.SetColor("_ShadowColor", name == GlowShard ? new Color(1f, 0.604f, 0.122f) : color * 0.5f);
+            if (!transparent && !text) m.SetColor("_ShadowColor", name == GlowShard ? Hex("#FF9A1F") : color * 0.5f);
+            if (name is Enemy or EnemyDark or EnemyReveal)
+            {
+                m.SetFloat("_HatchStrength", 0.25f);
+                m.SetColor("_HatchColor", Hex("#B80E0A"));
+            }
             if (name == GlowShard) m.SetFloat("_Emission", 0.45f);
             if (name is FloorShadow or RingFx) m.SetFloat("_OcclusionBias", 0.08f);
             if (name == EnemyReveal) m.EnableKeyword("_REVEAL");

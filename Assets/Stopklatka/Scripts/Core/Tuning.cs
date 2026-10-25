@@ -61,6 +61,10 @@ namespace Stopklatka
         }
 
         // Player
+        public static float EnemyStreakLength => C.visuals.enemyStreakLength;
+        public static float PlayerStreakLength => C.visuals.playerStreakLength;
+        public static SoundSettings Sound => C.sound;
+
         public static float GrabRadius => C.player.grabRadius;
         public static float ThrowBoost => C.player.throwBoost;
         public static float MaxThrowSpeed => C.player.maxThrowSpeed;

@@ -6,7 +6,8 @@ namespace Stopklatka
     /// How the real world looks through the cameras:
     ///   NORMALNY - untouched,
     ///   BIAŁY    - washed-out and bright (default),
-    ///   SUPERHOT - brightness mapped to white and cool greys, so only the enemies stay red.
+    ///   SUPERHOT - brightness mapped onto the white palette of STYLE_GUIDE.md (cool greys to white),
+    ///              so only the enemies stay red and your weapons black.
     /// Remembered between sessions. Always plain while paused or outside the scan, for safety.
     /// Also asks the system to hide the boundary while passthrough is on, so you can walk between rooms.
     /// </summary>
@@ -35,16 +36,24 @@ namespace Stopklatka
         {
             Instance = this;
             Current = (Style)Mathf.Clamp(PlayerPrefs.GetInt(Key, (int)Style.White), 0, 2);
+            // STYLE_GUIDE 0 and 3: camera brightness mapped onto the white palette, cool and bright.
+            // The darkest key stays darker than the guide's shadow (#B9C6CC) on purpose: edges of real
+            // furniture, steps and doors must stay easy to see (safety).
             _superhotGradient = new Gradient();
             _superhotGradient.SetKeys(
                 new[]
                 {
-                    new GradientColorKey(new Color(0.55f, 0.6f, 0.66f), 0f),
-                    new GradientColorKey(new Color(0.86f, 0.88f, 0.9f), 0.5f),
-                    new GradientColorKey(Color.white, 1f),
+                    new GradientColorKey(Hex("#7E8E96"), 0f),      // darkest: cool grey, still readable
+                    new GradientColorKey(Hex("#B9C6CC"), 0.25f),   // soft shadow
+                    new GradientColorKey(Hex("#E6EBED"), 0.55f),   // walls
+                    new GradientColorKey(Hex("#F2F4F5"), 0.8f),    // lit floor
+                    new GradientColorKey(Color.white, 1f),         // windows, light
                 },
                 new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) });
         }
+
+        // the passthrough color map takes display (sRGB) colors, the same as the hex values in the guide
+        static Color Hex(string hex) => ColorUtility.TryParseHtmlString(hex, out var c) ? c : Color.gray;
 
         void Start()
         {

@@ -37,9 +37,9 @@ namespace Stopklatka
             _age = 0f;
             _traveled = 0f;
             _movedFrame = -1;
-            // enemy shots get a long red trail so you can read where they go in slow motion
-            _streakMax = owner == BulletOwner.Enemy ? 1.6f : 0.8f;
-            _streakWidth = owner == BulletOwner.Enemy ? 1.3f : 1f;
+            // enemy shots get a long red trail so you can read where they go in slow motion (STYLE_GUIDE: 3-6 m)
+            _streakMax = owner == BulletOwner.Enemy ? Tuning.EnemyStreakLength : Tuning.PlayerStreakLength;
+            _streakWidth = 1f;
             _streakRenderer.sharedMaterial = Mats.Get(owner == BulletOwner.Enemy ? Mats.EnemyTrail : Mats.PlayerTrail);
             transform.rotation = Quaternion.LookRotation(velocity);
             _streak.localScale = new Vector3(_streakWidth, _streakWidth, 0.001f);

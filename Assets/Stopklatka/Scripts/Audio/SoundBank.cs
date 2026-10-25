@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Audio;
 
 namespace Stopklatka
 {
@@ -7,12 +8,20 @@ namespace Stopklatka
 
     /// <summary>
     /// All sounds are synthesized at startup (no audio files). 3D one-shots come from a pool of
-    /// AudioSources whose pitch follows the time scale, so sounds slow down with the world.
-    /// A quiet drone rises and falls with how fast time is moving.
+    /// AudioSources. World sounds slow down with time (GAME_SPEC 7): through the AudioMixer's exposed
+    /// WorldPitch (Resources/Audio/StopklatkaMixer, made by Stopklatka > 5. Create Audio Mixer) or,
+    /// without a mixer, by setting the pitch of each playing sound. UI sounds never slow down.
+    /// Ambient (2D, quiet): a low hum while time stands still that fades as time speeds up, and an airy
+    /// rush that rises as you move. Numbers in GameConfig sound.
     /// </summary>
     public class SoundBank : MonoBehaviour
     {
         public static SoundBank Instance { get; private set; }
+
+        // the mixer and its parts, by name (the builder creates them with these names)
+        public const string MixerResource = "Audio/StopklatkaMixer";
+        public const string WorldGroup = "World", UiGroup = "UI", AmbientGroup = "Ambient";
+        public const string WorldPitchParam = "WorldPitch", AmbientVolumeParam = "AmbientVolume";
 
         const int Rate = 44100;
         const int Voices = 24;
@@ -20,7 +29,11 @@ namespace Stopklatka
         readonly Dictionary<Sfx, AudioClip> _clips = new();
         readonly List<AudioSource> _voices = new();
         readonly List<bool> _worldTime = new();
-        AudioSource _drone;
+        readonly List<float> _basePitch = new();
+        AudioMixer _mixer;
+        AudioMixerGroup _world, _ui, _ambient;
+        bool _mixerPitch;
+        AudioSource _hum, _air;
         int _next;
 
         void Awake()
@@ -58,16 +71,54 @@ namespace Stopklatka
                 src.dopplerLevel = 0f;
                 _voices.Add(src);
                 _worldTime.Add(true);
+                _basePitch.Add(1f);
             }
 
-            var droneGo = new GameObject("Drone");
-            droneGo.transform.SetParent(transform, false);
-            _drone = droneGo.AddComponent<AudioSource>();
-            _drone.clip = Drone("drone", 4f, rng);
-            _drone.loop = true;
-            _drone.spatialBlend = 0f;
-            _drone.volume = 0f;
-            _drone.Play();
+            SetupMixer();
+            _hum = Loop("Still Hum", StillHum("hum", 4f, rng));
+            _air = Loop("Motion Ambient", Air("air", 4f, rng));
+        }
+
+        void SetupMixer()
+        {
+            if (!Tuning.Sound.useMixer)
+            {
+                Debug.Log("[Stopklatka] Audio: mixer off in GameConfig, pitch set per sound.");
+                return;
+            }
+            _mixer = Resources.Load<AudioMixer>(MixerResource);
+            if (_mixer == null)
+            {
+                Debug.LogWarning($"[Stopklatka] Audio: no mixer at Resources/{MixerResource}, pitch set per sound. Run Stopklatka > 5. Create Audio Mixer.");
+                return;
+            }
+            _world = FindGroup(WorldGroup);
+            _ui = FindGroup(UiGroup);
+            _ambient = FindGroup(AmbientGroup);
+            _mixerPitch = _world != null && _mixer.GetFloat(WorldPitchParam, out _);
+            Debug.Log($"[Stopklatka] Audio: mixer {_mixer.name}, world pitch {(_mixerPitch ? "in the mixer" : "per sound (" + WorldPitchParam + " not exposed)")}, " +
+                      $"groups World {_world != null}, UI {_ui != null}, Ambient {_ambient != null}");
+        }
+
+        AudioMixerGroup FindGroup(string name)
+        {
+            var groups = _mixer.FindMatchingGroups(name);
+            foreach (var g in groups) if (g.name == name) return g;
+            return groups.Length > 0 ? groups[0] : null;
+        }
+
+        AudioSource Loop(string name, AudioClip clip)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(transform, false);
+            var src = go.AddComponent<AudioSource>();
+            src.clip = clip;
+            src.loop = true;
+            src.spatialBlend = 0f;
+            src.volume = 0f;
+            src.outputAudioMixerGroup = _ambient;
+            src.Play();
+            return src;
         }
 
         /// <param name="worldTime">If true the sound slows down with game time.</param>
@@ -76,11 +127,14 @@ namespace Stopklatka
             if (!_clips.TryGetValue(sfx, out var clip)) return;
             var src = _voices[_next];
             _worldTime[_next] = worldTime;
+            _basePitch[_next] = pitch;
             _next = (_next + 1) % _voices.Count;
             src.transform.position = position;
             src.clip = clip;
             src.volume = volume;
-            src.pitch = pitch * (worldTime ? WorldPitch() : 1f);
+            // world sounds go through the World group (slowed by the mixer), the rest through UI
+            src.outputAudioMixerGroup = worldTime ? _world : _ui;
+            src.pitch = pitch * (worldTime && !_mixerPitch ? WorldPitch() : 1f);
             src.Play();
         }
 
@@ -90,23 +144,39 @@ namespace Stopklatka
             Play(sfx, head, volume, 1f, false);
         }
 
+        /// <summary>Pitch of world sounds for the current time scale (GameConfig sound.slowPitch..fullPitch).</summary>
         static float WorldPitch()
         {
+            var c = Tuning.Sound;
             float s = Time.timeScale;
-            return s <= 0f ? 0.01f : Mathf.Lerp(0.35f, 1f, Mathf.Sqrt(s));
+            return s <= 0f ? 0.01f : Mathf.Max(0.01f, Mathf.Lerp(c.slowPitch, c.fullPitch, Mathf.Sqrt(s)));
         }
 
         void Update()
         {
             float p = WorldPitch();
-            for (int i = 0; i < _voices.Count; i++)
-                if (_worldTime[i] && _voices[i].isPlaying) _voices[i].pitch = Mathf.Max(0.01f, p);
+            if (_mixerPitch) _mixer.SetFloat(WorldPitchParam, p);
+            else
+            {
+                for (int i = 0; i < _voices.Count; i++)
+                    if (_worldTime[i] && _voices[i].isPlaying) _voices[i].pitch = Mathf.Max(0.01f, _basePitch[i] * p);
+            }
 
+            var c = Tuning.Sound;
+            if (_mixer != null) _mixer.SetFloat(AmbientVolumeParam, c.ambientDb);   // false (ignored) if not exposed
+
+            // ambient only while playing in motion-driven time; silent in the menu and while paused
             var tc = TimeController.Instance;
-            bool slowMode = tc != null && tc.CurrentMode == TimeController.Mode.MotionDriven;
-            float targetVol = slowMode ? Mathf.Lerp(0.05f, 0.16f, tc.Scale) : 0f;
-            _drone.volume = Mathf.MoveTowards(_drone.volume, targetVol, Time.unscaledDeltaTime * 0.5f);
-            _drone.pitch = slowMode ? Mathf.Lerp(0.6f, 1.1f, tc.Scale) : 1f;
+            float still = 0f, moving = 0f;
+            if (tc != null && tc.CurrentMode == TimeController.Mode.MotionDriven)
+            {
+                still = 1f - Mathf.InverseLerp(Tuning.MinTimeScale, Tuning.MaxTimeScale, tc.Scale);
+                moving = tc.Motion;
+            }
+            float k = 1f - Mathf.Exp(-Time.unscaledDeltaTime / Mathf.Max(0.05f, c.ambientResponse));
+            _hum.volume = Mathf.Lerp(_hum.volume, still * c.stillHumVolume, k);
+            _air.volume = Mathf.Lerp(_air.volume, moving * c.motionAmbientVolume, k);
+            _air.pitch = Mathf.Lerp(0.9f, 1.15f, moving);
         }
 
         // --- synthesis -------------------------------------------------------------
@@ -236,20 +306,53 @@ namespace Stopklatka
             return Make(name, d);
         }
 
-        static AudioClip Drone(string name, float seconds, System.Random r)
+        /// <summary>Makes a seamless loop: the extra samples after [length] are crossfaded into the start.</summary>
+        static float[] Seamless(float[] raw, int length)
+        {
+            int fade = raw.Length - length;
+            var d = new float[length];
+            System.Array.Copy(raw, d, length);
+            for (int i = 0; i < fade; i++)
+            {
+                float t = i / (float)fade;
+                d[i] = raw[i] * t + raw[length + i] * (1f - t);
+            }
+            return d;
+        }
+
+        /// <summary>The low hum of stopped time: a deep rumble and two low tones.</summary>
+        static AudioClip StillHum(string name, float seconds, System.Random r)
         {
             int n = (int)(seconds * Rate);
-            var d = new float[n];
-            float lp = 0f;
-            for (int i = 0; i < n; i++)
+            var raw = new float[n + Rate / 2];
+            float lp = 0f, lp2 = 0f;
+            for (int i = 0; i < raw.Length; i++)
             {
                 float t = i / (float)Rate;
-                lp += (Noise(r) - lp) * 0.01f;
-                // whole cycles over the clip length so the loop is seamless
-                float hum = Mathf.Sin(2f * Mathf.PI * 55f * t) * 0.5f + Mathf.Sin(2f * Mathf.PI * 82.5f * t) * 0.25f;
-                d[i] = hum * 0.5f + lp * 2f;
+                lp += (Noise(r) - lp) * 0.02f;
+                lp2 += (lp - lp2) * 0.05f;
+                // whole cycles over the clip length (45 Hz and 67.5 Hz over 4 s), so the tones loop cleanly
+                float hum = Mathf.Sin(2f * Mathf.PI * 45f * t) * 0.35f + Mathf.Sin(2f * Mathf.PI * 67.5f * t) * 0.15f;
+                raw[i] = Mathf.Clamp(hum + lp2 * 4f, -1f, 1f);
             }
-            return Make(name, d);
+            return Make(name, Seamless(raw, n));
+        }
+
+        /// <summary>A soft airy rush (band-limited noise) with one slow swell per loop.</summary>
+        static AudioClip Air(string name, float seconds, System.Random r)
+        {
+            int n = (int)(seconds * Rate);
+            var raw = new float[n + Rate / 2];
+            float lp = 0f, slow = 0f;
+            for (int i = 0; i < raw.Length; i++)
+            {
+                float t = i / (float)Rate;
+                lp += (Noise(r) - lp) * 0.12f;      // low-passed noise...
+                slow += (lp - slow) * 0.01f;        // ...minus its rumble
+                float swell = 0.75f + 0.25f * Mathf.Sin(2f * Mathf.PI * t / seconds);
+                raw[i] = Mathf.Clamp((lp - slow) * 1.6f * swell, -1f, 1f);
+            }
+            return Make(name, Seamless(raw, n));
         }
     }
 }

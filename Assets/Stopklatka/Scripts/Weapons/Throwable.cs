@@ -5,7 +5,7 @@ namespace Stopklatka
     public enum ThrowableKind { Bottle, Mug, Ashtray, Block, Ball }
 
     /// <summary>
-    /// Things that are only good for throwing. Bottles (white glass), mugs and ashtrays (dark) break
+    /// Things that are only good for throwing. Bottles (dark glass), mugs and ashtrays (black) break
     /// into shards on a hard impact; blocks and balls just bounce. All of them stun the enemy they hit
     /// (kill only with GameConfig combat.killOnThrow).
     /// </summary>
@@ -30,7 +30,11 @@ namespace Stopklatka
         {
             if (Kind == ThrowableKind.Bottle)
             {
-                base.Break(point);
+                // dark glass: small sharp shards and a bright glass sound
+                ShardSystem.Burst(transform.position, Mats.Get(Mats.DarkGlass), 14, Body.linearVelocity * 0.3f, 1.6f, 0.025f, 0.05f);
+                SoundBank.Instance?.Play(Sfx.GlassBreak, point, 0.9f, Random.Range(0.9f, 1.1f));
+                if (Holder != null) Holder.ForceDrop();
+                Destroy(gameObject);
                 return;
             }
             // ceramic: dark chunks, a duller sound than glass

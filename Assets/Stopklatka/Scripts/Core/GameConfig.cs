@@ -27,6 +27,8 @@ namespace Stopklatka
         public ModeProfile school = ModeProfile.CreateSchool();
         [Tooltip("Numbers for playing at home (a whole house, smaller rooms).")]
         public ModeProfile home = ModeProfile.CreateHome();
+        public VisualSettings visuals = new();
+        public SoundSettings sound = new();
         public PerformanceSettings performance = new();
         public DebugSettings debug = new();
 
@@ -416,6 +418,35 @@ namespace Stopklatka
                 new WaveDefinition(6, 5, 0.75f, 0.25f, 0.3f, 6),
                 new WaveDefinition(7, 6, 0.8f, 0.25f, 0.35f, 8)),
         };
+    }
+
+    [Serializable]
+    public class VisualSettings
+    {
+        [Tooltip("Longest red streak behind an enemy bullet (m). STYLE_GUIDE: 3 to 6 m, so you can read where it goes in slow motion.")]
+        public float enemyStreakLength = 3.5f;
+        [Tooltip("Longest dark streak behind your bullets (m).")]
+        public float playerStreakLength = 1f;
+    }
+
+    /// <summary>Sound (GAME_SPEC 7). Not "AudioSettings": that name belongs to UnityEngine.</summary>
+    [Serializable]
+    public class SoundSettings
+    {
+        [Tooltip("Route sounds through Resources/Audio/StopklatkaMixer (Stopklatka > 5. Create Audio Mixer). Off, or no mixer: the pitch is set on each sound instead.")]
+        public bool useMixer = true;
+        [Tooltip("Pitch of world sounds when time nearly stops.")]
+        [Range(0.1f, 1f)] public float slowPitch = 0.35f;
+        [Tooltip("Pitch of world sounds at full speed.")]
+        [Range(0.5f, 1.5f)] public float fullPitch = 1f;
+        [Tooltip("The low hum while time stands still (fades out as time speeds up).")]
+        [Range(0f, 1f)] public float stillHumVolume = 0.2f;
+        [Tooltip("The quiet ambient at full movement (fades in as you move).")]
+        [Range(0f, 1f)] public float motionAmbientVolume = 0.1f;
+        [Tooltip("Seconds the ambient takes to follow your movement.")]
+        public float ambientResponse = 0.35f;
+        [Tooltip("Overall ambient level in the mixer (dB, 0 = as is, -80 = silent).")]
+        [Range(-80f, 10f)] public float ambientDb = 0f;
     }
 
     [Serializable]

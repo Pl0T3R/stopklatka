@@ -151,6 +151,33 @@ Po każdym etapie:
   - **Wydajność:** pool odłamków, kawałków, pęknięć i błysków tworzony w trakcie wczytywania skanu (`Shatter.Prewarm`), żeby pierwsze zabicie nie tworzyło kilkudziesięciu obiektów naraz. Jedno zabicie: do ~20 kawałków i przełomów oraz do 60 odłamków (limity: `shatter.maxPieces` 72, odłamki 320).
   - **Porównanie ze `STYLE_GUIDE.md`:** zgadza się sylwetka (szerokie barki, wąska talia, długie nogi, długa wąska głowa bez twarzy, dłonie jak bryłki), żółty błysk, odłamki w dwóch odcieniach czerwieni (trójkąty i czworościany), świecące przełomy na dużych kawałkach, płaski świecący przekrój po cięciu i osobno odlatujące połowy, wachlarz odłamków z linii cięcia, pęknięcia od pięści, odłamki wiszące w zwolnionym czasie i znikające po 3–5 s, poza obronna z rękami przed twarzą, celowanie z wyprostowanej ręki. Odbiega: brak kreskowania (etap 5, shader); cięcie zawsze między częściami, nie dokładnie wzdłuż linii ostrza; przełom to jednolity dysk, nie dokładny kształt przekroju; kawałki przenikają przez prawdziwe ściany; przeciwnicy nie biegają (świadomie, bezpieczeństwo w prawdziwym pokoju), więc nie ma „biegu z szerokim krokiem”; pozy (osłona, zamach) i kolory są ustawione na oko, bez gogli.
 
+- **Etap 5: gotowy (kompilacja testowa: 0 błędów, 0 ostrzeżeń; shader i mixer niesprawdzone w Unity i na goglach).** Główna sesja.
+  - **Materiały według palety** (`StopklatkaBuilder.CreateMaterials`, kolory jako HEX z `STYLE_GUIDE.md` §3 i §5; te same w `Mats.CreateFallback`):
+    - przeciwnik `#FF2B1C` / `#9E0A08`, rim `#FF6A5A` 0,6, połysk 0,5, gloss 40; ciemniejsze odłamki `#9E0A08` / `#6A0505`;
+    - broń, przedmioty i pięść `#1E3242` / `#0B141A`, rim `#3A5A6E` 0,5, chłodny refleks `#8FB0C4`, gloss 64;
+    - katana: czarne ostrze `#1A2630` ze stalowoszarą krawędzią (mocny rim `#AEB8BF`), wcześniej była jasnostalowa;
+    - **butelka z ciemnego szkła** (nowy materiał `GlassDark`), bo wszystko, czego używasz, jest czarne (punkty 1 i 7); białe kryształy menu zostają na `GlassWhite`;
+    - smuga wroga `#FF1E1E` α 0,8, twoja `#0B141A`; **błysk wystrzału i sygnał przed strzałem wroga są białe**: żółto-pomarańczowy akcent jest tylko tam, gdzie przeciwnik pęka (punkt 1);
+    - cień pod przeciwnikiem chłodny szaroniebieski `#5E6E78` α 0,38 (na białej podłodze wychodzi około `#B9C6CC`, nigdy czarny);
+    - nowe na etap 6: `StatueWhite` (`#ECEFF0` / `#D9E0E3`) i `PropWhite` (`#F2F4F5` / `#D3DCE0`) do białych rekwizytów.
+  - **Kreskowanie** (`Crystal.shader`): cienkie ukośne paski pod 45° w przestrzeni obiektu, 60 na metr, `#B80E0A` przy 25%, tylko na materiałach przeciwnika (`_HatchStrength`). Wygładzane przez `fwidth` i wygaszane, gdy pasek robi się węższy niż około 1,5 piksela, więc widać je z bliska (do około 3 m), a z daleka nie migoczą. Wartość materiału zamiast słowa kluczowego: zero nowych wariantów, SRP Batcher bez zmian. **Jedyna zmiana shadera w tym etapie.**
+  - **Smuga pocisku** (punkt 2, obraz 1): prawie stała grubość około 1 cm, pełna przez 60% długości i zanikająca na końcu; wroga do 3,5 m (`visuals.enemyStreakLength`, przewodnik: 3–6 m), twoja do 1 m.
+  - **Filtr SUPERHOT** (`PassthroughStyle`): obraz z kamer odwzorowany na paletę: `#7E8E96` → `#B9C6CC` → `#E6EBED` → `#F2F4F5` → `#FFFFFF`. **Decyzja:** najciemniejszy próg jest ciemniejszy niż cień z przewodnika (`#B9C6CC`), żeby krawędzie prawdziwych mebli, schodów i drzwi były dobrze widoczne (bezpieczeństwo).
+  - **Dźwięk** (GAME_SPEC 7):
+    - **AudioMixer**: builder (**Stopklatka → 5. Create Audio Mixer**, też w Build Game) tworzy `Resources/Audio/StopklatkaMixer.mixer` z grupami World, UI i Ambient oraz wystawionymi parametrami `WorldPitch` i `AmbientVolume`. Unity nie ma do tego publicznego API, więc builder woła przez refleksję wewnętrzne metody edytora, te same co okno Audio Mixer (sprawdzone na DLL edytora 6000.0.85). Jeśli to się nie uda, w logu i w `CLAUDE.md` jest instrukcja ręczna w 6 krokach, a gra do tego czasu ustawia pitch na każdym dźwięku.
+    - Dźwięki świata idą przez grupę World i zwalniają z czasem (pitch 35–100%, `sound.slowPitch` / `fullPitch`), dźwięki UI przez UI i nigdy nie zwalniają. Zachowana losowa wariacja wysokości każdego dźwięku.
+    - **Ambient** (dwa zapętlone dźwięki syntetyzowane przy starcie, płynne pętle): niski szum, gdy czas stoi (cichnie, gdy czas przyspiesza), i cichy szum powietrza narastający z ruchem. Oba tylko w trakcie gry, cisza w menu i w pauzie. Zastępują dawny „drone”, który rósł z czasem.
+    - Dźwięki świata nadal pozycyjne 3D.
+  - **Porównanie ze `STYLE_GUIDE.md` (lista z punktu 11):**
+    - [x] Tylko biel, czerwień, czerń, żółto-pomarańczowe świecenie (tylko przy pękaniu) i czerwone smugi. Białe błyski wystrzału.
+    - [x] Cienie jasne i chłodne, bez czarnych plam (cień pod przeciwnikiem, filtr SUPERHOT).
+    - [ ] Mgła cyan w korytarzach: w MR nie ma mgły na prawdziwym obrazie; zostaje do etapu 6 jako lekka mgła na wirtualnych rekwizytach.
+    - [x] Przeciwnik fasetowany, czerwony, bez twarzy, z wydłużoną głową i kreskowaniem z bliska.
+    - [x] Pocisk: mały ciemny, długa cienka czerwona smuga, widoczna w zwolnionym czasie. (Korpus pocisku używa materiału broni `#1E3242` zamiast `#121212`, różnica niewidoczna.)
+    - [x] Rozpad: drobne odłamki w dwóch odcieniach, świecące przełomy, przekrój po cięciu (etap 4).
+    - [x] Broń i dłonie czarne z granatowym połyskiem na krawędziach.
+    - [ ] Pomieszczenia: płyty, białe bryły, okna. Prawdziwy pokój plus filtr; białe rekwizyty to etap 6.
+
 **Budżety wydajności (90 Hz, czyli 11,1 ms na klatkę):**
 - do 150 draw calli,
 - do 150 tys. trójkątów w kadrze,

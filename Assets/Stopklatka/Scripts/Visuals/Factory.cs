@@ -155,7 +155,7 @@ namespace Stopklatka
                 : r < 0.85f ? ThrowableKind.Block : ThrowableKind.Ball;
         }
 
-        /// <summary>Bottle (white glass), mug, ashtray, block or ball (black matte).</summary>
+        /// <summary>Bottle (dark glass), mug, ashtray, block or ball (black).</summary>
         public static Throwable CreateThrowable(ThrowableKind kind, Vector3 position, Quaternion rotation)
         {
             EnsureMeshes();
@@ -168,7 +168,7 @@ namespace Stopklatka
             {
                 case ThrowableKind.Bottle:
                 {
-                    MeshKit.Part("Mesh", go.transform, _bottle, Mats.Get(Mats.Glass));
+                    MeshKit.Part("Mesh", go.transform, _bottle, Mats.Get(Mats.DarkGlass));
                     var col = go.AddComponent<CapsuleCollider>();
                     col.center = new Vector3(0f, 0.02f, 0f);
                     col.height = 0.28f;

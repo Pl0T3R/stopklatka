@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Meta.XR.EnvironmentDepth;
 using Meta.XR.MRUtilityKit;
 using Unity.AI.Navigation;
@@ -8,6 +10,7 @@ using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Audio;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
@@ -28,6 +31,7 @@ namespace Stopklatka.EditorTools
         const string ScenePath = Root + "/Scenes/Stopklatka.unity";
         const string TimeTestScenePath = Root + "/Scenes/TimeTest.unity";
         const string ConfigPath = Root + "/Resources/" + GameConfig.ResourcePath + ".asset";
+        const string MixerPath = Root + "/Resources/" + SoundBank.MixerResource + ".mixer";
 
         [MenuItem("Stopklatka/Build Game (settings + materials + scene)", priority = 0)]
         public static void BuildAll()
@@ -35,6 +39,7 @@ namespace Stopklatka.EditorTools
             ConfigureProject();
             CreateMaterials();
             EnsureGameConfig();
+            EnsureAudioMixer();
             BuildScene();
             Debug.Log("[Stopklatka] Done. Next: Meta > Tools > Project Setup Tool > Fix All, then File > Build And Run.");
         }
@@ -126,38 +131,57 @@ namespace Stopklatka.EditorTools
         public static void CreateMaterials()
         {
             Directory.CreateDirectory(MaterialDir);
-            // Superhot palette: red enemies, glossy black weapons, white glass. Tune colors here.
-            // Crystal(name, lit, shadow, rim color, rim strength, highlight strength, gloss, emission)
-            Crystal(Mats.Enemy, new Color(0.92f, 0.13f, 0.09f), new Color(0.5f, 0.03f, 0.04f), new Color(1f, 0.6f, 0.52f), 0.65f, 0.55f, 40f, 0f);
-            Crystal(Mats.EnemyDark, new Color(0.62f, 0.05f, 0.05f), new Color(0.3f, 0.01f, 0.02f), new Color(1f, 0.4f, 0.35f), 0.5f, 0.4f, 32f, 0f);
-            var reveal = Crystal(Mats.EnemyReveal, new Color(0.92f, 0.13f, 0.09f), new Color(0.5f, 0.03f, 0.04f), new Color(1f, 0.6f, 0.52f), 0.65f, 0.55f, 40f, 0f);
-            reveal.SetColor("_RevealColor", new Color(1f, 0.85f, 0.75f));
+            // Colors from STYLE_GUIDE.md (sections 3 and 5): red is what wants to kill you, black is what you
+            // can use, white is the world, yellow-orange only where an enemy breaks. Tune colors here.
+            // Crystal(name, lit, shadow, rim color, rim strength, highlight strength, gloss, emission, highlight color, hatching)
+            var enemyRim = Hex("#FF6A5A");
+            Crystal(Mats.Enemy, Hex("#FF2B1C"), Hex("#9E0A08"), enemyRim, 0.6f, 0.5f, 40f, 0f, hatching: 0.25f);
+            // a third of the shards: the darker red (#9E0A08 lit)
+            Crystal(Mats.EnemyDark, Hex("#9E0A08"), Hex("#6A0505"), enemyRim, 0.45f, 0.4f, 32f, 0f, hatching: 0.25f);
+            var reveal = Crystal(Mats.EnemyReveal, Hex("#FF2B1C"), Hex("#9E0A08"), enemyRim, 0.6f, 0.5f, 40f, 0f, hatching: 0.25f);
+            reveal.SetColor("_RevealColor", new Color(1f, 0.93f, 0.88f));
             reveal.EnableKeyword("_REVEAL");
-            Crystal(Mats.Weapon, new Color(0.1f, 0.1f, 0.11f), new Color(0.03f, 0.03f, 0.035f), new Color(0.5f, 0.52f, 0.58f), 0.5f, 0.9f, 64f, 0f);
-            Crystal(Mats.Blade, new Color(0.85f, 0.87f, 0.9f), new Color(0.5f, 0.53f, 0.58f), Color.white, 0.6f, 1.2f, 128f, 0f);
-            Crystal(Mats.Glass, new Color(0.9f, 0.95f, 0.97f), new Color(0.62f, 0.72f, 0.78f), Color.white, 0.7f, 1f, 96f, 0.05f);
-            Crystal(Mats.Target, new Color(0.98f, 0.16f, 0.1f), new Color(0.6f, 0.04f, 0.04f), new Color(1f, 0.7f, 0.6f), 0.8f, 0.8f, 48f, 0.25f);
-            Flat(Mats.EnemyTrail, new Color(1f, 0.12f, 0.08f, 0.75f));
-            Flat(Mats.PlayerTrail, new Color(0.08f, 0.08f, 0.1f, 0.6f));
-            Flat(Mats.Flash, new Color(1f, 0.92f, 0.65f, 0.9f));
+            // weapons, throwables and your fist: blue-black, half matte, a navy-teal sheen on the edges
+            var coolHighlight = Hex("#8FB0C4");
+            Crystal(Mats.Weapon, Hex("#1E3242"), Hex("#0B141A"), Hex("#3A5A6E"), 0.5f, 0.9f, 64f, 0f, coolHighlight);
+            // katana: a black blade, the steel-grey edge comes from a strong rim
+            Crystal(Mats.Blade, Hex("#1A2630"), Hex("#0B141A"), Hex("#AEB8BF"), 0.9f, 1.2f, 128f, 0f, Hex("#E0E6EA"));
+            // the bottle: dark smoky glass (everything you can use is black)
+            Crystal(Mats.DarkGlass, Hex("#22384A"), Hex("#0B141A"), Hex("#7FA3B8"), 0.9f, 1f, 96f, 0f, Hex("#C8D8E2"));
+            // white crystals (menu toggles, wrist gauge tick, sparks) and white props for the levels (stage 6)
+            Crystal(Mats.Glass, Hex("#F2F4F5"), Hex("#C7D1D6"), Color.white, 0.6f, 0.8f, 96f, 0.05f);
+            Crystal(Mats.Statue, Hex("#ECEFF0"), Hex("#D9E0E3"), Color.white, 0.3f, 0.2f, 16f, 0f);
+            Crystal(Mats.PropWhite, Hex("#F2F4F5"), Hex("#D3DCE0"), Color.white, 0.15f, 0.1f, 12f, 0f);
+            Crystal(Mats.Target, Hex("#FF2B1C"), Hex("#9E0A08"), Hex("#FF8A7A"), 0.8f, 0.8f, 48f, 0.25f);
+            // bullet streaks: enemy #FF1E1E at 80%, fading to clear at the tail; yours blue-black
+            Flat(Mats.EnemyTrail, WithAlpha(Hex("#FF1E1E"), 0.8f));
+            Flat(Mats.PlayerTrail, WithAlpha(Hex("#0B141A"), 0.6f));
+            // muzzle flash: white (the yellow-orange accent is only for enemies breaking)
+            Flat(Mats.Flash, new Color(1f, 1f, 1f, 0.85f));
             Flat(Mats.RedFlash, new Color(0.9f, 0.02f, 0.02f, 0.6f));
-            // things lying on the real floor: the bias stops the floor's own depth from hiding them
-            Flat(Mats.FloorShadow, new Color(0.04f, 0.04f, 0.06f, 0.42f), 0.08f);
-            Flat(Mats.RingFx, new Color(1f, 0.12f, 0.08f, 0.85f), 0.08f);
+            // things lying on the real floor: the bias stops the floor's own depth from hiding them.
+            // The shadow is a cool grey-blue: over a white floor it comes out near #B9C6CC, never black.
+            Flat(Mats.FloorShadow, WithAlpha(Hex("#5E6E78"), 0.38f), 0.08f);
+            Flat(Mats.RingFx, WithAlpha(Hex("#FF2B1C"), 0.85f), 0.08f);
             Flat(Mats.Hidden, new Color(0f, 0f, 0f, 0f));
             // fracture glow (STYLE_GUIDE 8): white base, the cap/crack/flash meshes carry #FFD84D (core) to #FF9A1F (edge)
             // as vertex colors, so one material serves every glowing break
             Flat(Mats.Glow, Color.white);
             // glowing shards: lit #FFD84D, shadow #FF9A1F, strong emission so they read as light, not paint
-            Crystal(Mats.GlowShard, new Color(1f, 0.847f, 0.302f), new Color(1f, 0.604f, 0.122f), new Color(1f, 0.95f, 0.75f), 0.5f, 0.4f, 24f, 0.45f);
+            Crystal(Mats.GlowShard, Hex("#FFD84D"), Hex("#FF9A1F"), new Color(1f, 0.95f, 0.75f), 0.5f, 0.4f, 24f, 0.45f);
             var text = Material(Mats.Text, "Stopklatka/Text");
             text.SetColor("_BaseColor", Color.white);
             AssetDatabase.SaveAssets();
         }
 
-        static Material Crystal(string name, Color lit, Color shadow, Color rim, float rimStrength, float specStrength, float gloss, float emission)
+        static Material Crystal(string name, Color lit, Color shadow, Color rim, float rimStrength, float specStrength, float gloss,
+                                float emission, Color? highlight = null, float hatching = 0f)
         {
             var m = Material(name, "Stopklatka/Crystal");
+            m.SetColor("_HighlightColor", highlight ?? new Color(1f, 0.88f, 0.84f));
+            m.SetFloat("_HatchStrength", hatching);   // diagonal stripes, #B80E0A at about 25% on enemies
+            m.SetColor("_HatchColor", Hex("#B80E0A"));
+            m.SetFloat("_HatchDensity", 60f);
             m.SetColor("_BaseColor", lit);
             m.SetColor("_ShadowColor", shadow);
             m.SetColor("_RimColor", rim);
@@ -168,6 +192,15 @@ namespace Stopklatka.EditorTools
             m.DisableKeyword("_REVEAL");
             return m;
         }
+
+        /// <summary>A palette color from STYLE_GUIDE.md ("#RRGGBB", sRGB like the Inspector).</summary>
+        static Color Hex(string hex)
+        {
+            if (!ColorUtility.TryParseHtmlString(hex, out var c)) Debug.LogError($"[Stopklatka] Bad color {hex}");
+            return c;
+        }
+
+        static Color WithAlpha(Color c, float a) => new(c.r, c.g, c.b, a);
 
         static void Flat(string name, Color color, float occlusionBias = 0f)
         {
@@ -204,6 +237,98 @@ namespace Stopklatka.EditorTools
             AssetDatabase.SaveAssets();
             Debug.Log($"[Stopklatka] Created {ConfigPath} with default settings. Tune the game there.");
         }
+
+        // --- audio mixer ----------------------------------------------------------
+
+        /// <summary>
+        /// The AudioMixer of GAME_SPEC 7: groups World (slows down with time), UI (never slowed) and
+        /// Ambient, with World's pitch exposed as "WorldPitch" and Ambient's volume as "AmbientVolume".
+        /// Unity has no public API to build a mixer, so this calls the editor's internal
+        /// AudioMixerController (methods checked against Unity 6000.0.85). If that fails, the log shows
+        /// the manual steps (also in CLAUDE.md) and the game sets the pitch on each sound instead.
+        /// An existing mixer is never touched, so your own changes stay.
+        /// </summary>
+        [MenuItem("Stopklatka/5. Create Audio Mixer (if missing)", priority = 24)]
+        public static void EnsureAudioMixer()
+        {
+            if (AssetDatabase.LoadAssetAtPath<AudioMixer>(MixerPath) != null) return;
+            Directory.CreateDirectory(Path.GetDirectoryName(MixerPath));
+            try
+            {
+                var controllerType = EditorType("UnityEditor.Audio.AudioMixerController");
+                var pathType = EditorType("UnityEditor.Audio.AudioGroupParameterPath");
+                var exposedType = EditorType("UnityEditor.Audio.ExposedAudioParameter");
+                const BindingFlags pub = BindingFlags.Public | BindingFlags.Instance;
+
+                var mixer = controllerType.GetMethod("CreateMixerControllerAtPath", BindingFlags.Public | BindingFlags.Static)
+                    .Invoke(null, new object[] { MixerPath });
+                var master = controllerType.GetProperty("masterGroup", pub).GetValue(mixer);
+                var createGroup = controllerType.GetMethod("CreateNewGroup", pub, null, new[] { typeof(string), typeof(bool) }, null);
+                var addChild = controllerType.GetMethod("AddChildToParent", pub);
+                var addToView = controllerType.GetMethod("AddGroupToCurrentView", pub);
+
+                object Group(string name)
+                {
+                    var g = createGroup.Invoke(mixer, new object[] { name, false });
+                    addChild.Invoke(mixer, new[] { g, master });
+                    // only so the group shows in the Audio Mixer window; the mixer works without it
+                    try { addToView?.Invoke(mixer, new[] { g }); }
+                    catch (Exception e) { Debug.LogWarning($"[Stopklatka] Mixer group {name} not added to the window view: {e.GetBaseException().Message}"); }
+                    return g;
+                }
+
+                void Expose(object group, string guidMethod, string name)
+                {
+                    var guid = group.GetType().GetMethod(guidMethod, pub).Invoke(group, null);
+                    var path = Activator.CreateInstance(pathType, group, guid);
+                    controllerType.GetMethod("AddExposedParameter", pub).Invoke(mixer, new[] { path });
+                    // rename it from Unity's "MyExposedParam" to the name the game uses
+                    var prop = controllerType.GetProperty("exposedParameters", pub);
+                    var list = (Array)prop.GetValue(mixer);
+                    for (int i = 0; i < list.Length; i++)
+                    {
+                        var p = list.GetValue(i);
+                        if (!exposedType.GetField("guid").GetValue(p).Equals(guid)) continue;
+                        exposedType.GetField("name").SetValue(p, name);   // p is a boxed copy: write it back
+                        list.SetValue(p, i);
+                    }
+                    prop.SetValue(mixer, list);
+                }
+
+                var world = Group(SoundBank.WorldGroup);
+                Group(SoundBank.UiGroup);
+                var ambient = Group(SoundBank.AmbientGroup);
+                Expose(world, "GetGUIDForPitch", SoundBank.WorldPitchParam);
+                Expose(ambient, "GetGUIDForVolume", SoundBank.AmbientVolumeParam);
+
+                // the same steps as Unity's own Audio Mixer window: CreateNewGroup, AddChildToParent,
+                // AddGroupToCurrentView, then OnSubAssetChanged
+                controllerType.GetMethod("OnSubAssetChanged", pub, null, Type.EmptyTypes, null)?.Invoke(mixer, null);
+                EditorUtility.SetDirty((UnityEngine.Object)mixer);
+                AssetDatabase.SaveAssets();
+                Debug.Log($"[Stopklatka] Audio mixer created at {MixerPath}: groups World, UI, Ambient; " +
+                          $"exposed {SoundBank.WorldPitchParam} and {SoundBank.AmbientVolumeParam}.");
+            }
+            catch (Exception e)
+            {
+                // don't leave a half-built mixer behind: the manual steps start from nothing
+                if (AssetDatabase.LoadAssetAtPath<AudioMixer>(MixerPath) != null) AssetDatabase.DeleteAsset(MixerPath);
+                Debug.LogWarning($"[Stopklatka] Couldn't create the audio mixer from code ({e.GetBaseException().Message}). " +
+                                 "The game still works: it sets the pitch on each sound. To use a mixer, make it by hand:\n" + ManualMixerSteps);
+            }
+        }
+
+        const string ManualMixerSteps =
+            "1. Project window: right-click Assets/Stopklatka/Resources/Audio > Create > Audio Mixer, name it StopklatkaMixer.\n" +
+            "2. Window > Audio > Audio Mixer. Next to Groups click + three times (all under Master): World, UI, Ambient.\n" +
+            "3. Select the World group. In the Inspector, right-click Pitch > Expose 'Pitch (of World)' to script.\n" +
+            "4. Select the Ambient group. Right-click Volume > Expose 'Volume (of Ambient)' to script.\n" +
+            "5. In the Audio Mixer window, top right: Exposed Parameters. Rename them WorldPitch and AmbientVolume.\n" +
+            "6. Save (Ctrl+S). Nothing else: SoundBank finds the mixer and the groups by name.";
+
+        static Type EditorType(string fullName) =>
+            AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType(fullName)).FirstOrDefault(t => t != null)
+            ?? throw new MissingMemberException(fullName);
 
         // --- scenes ---------------------------------------------------------------
 
@@ -291,6 +416,7 @@ namespace Stopklatka.EditorTools
         public static void BuildTimeTestScene()
         {
             EnsureGameConfig();
+            EnsureAudioMixer();
             if (AssetDatabase.LoadAssetAtPath<Material>($"{MaterialDir}/{Mats.Enemy}.mat") == null) CreateMaterials();
             var scene = NewScene();
             if (CreateCameraRig(suppressBoundary: false) == null) return;
