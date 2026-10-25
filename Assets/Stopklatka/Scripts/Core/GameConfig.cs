@@ -16,6 +16,8 @@ namespace Stopklatka
         public TimeSettings time = new();
         public HandSettings player = new();
         public CombatSettings combat = new();
+        public WeaponSettings weapons = new();
+        public HapticSettings haptics = new();
         public EnemySettings enemies = new();
         [Tooltip("Numbers for playing at school (big rooms and corridors).")]
         public ModeProfile school = ModeProfile.CreateSchool();
@@ -88,6 +90,26 @@ namespace Stopklatka
         [Tooltip("Thrown objects fly this much faster than the hand moved.")]
         public float throwBoost = 1.1f;
         public float maxThrowSpeed = 18f;
+
+        [Header("Catching")]
+        [Tooltip("While the grip is held with an empty hand, items flying faster than this (m/s) are caught when they reach the hand.")]
+        public float catchMinSpeed = 0.5f;
+        [Tooltip("Extra grab radius (m) per m/s of the item's speed, so fast items are easier to catch.")]
+        public float catchRadiusPerSpeed = 0.012f;
+        [Tooltip("Largest extra grab radius (m) for fast items.")]
+        public float catchRadiusBonusMax = 0.08f;
+
+        [Header("Fist")]
+        [Tooltip("Show a black low-poly fist on an empty controller and let it punch.")]
+        public bool fistEnabled = true;
+        [Tooltip("Real hand speed (m/s) at which a punch kills an enemy.")]
+        public float punchKillSpeed = 2f;
+        [Tooltip("Real hand speed (m/s) at which a weaker punch stuns (knocks the weapon out). 0 = slower punches do nothing.")]
+        public float punchStunSpeed = 1f;
+        [Tooltip("Radius (m) of the fist's hit sphere around the knuckles.")]
+        public float punchRadius = 0.07f;
+        [Tooltip("Real seconds before the same hand can hit the same enemy again.")]
+        public float punchRepeatSeconds = 0.5f;
     }
 
     [Serializable]
@@ -97,6 +119,92 @@ namespace Stopklatka
         public float playerBulletSpeed = 26f;
         [Tooltip("Bullets disappear after this many game seconds.")]
         public float bulletLifetime = 8f;
+        [Tooltip("Your bullet destroys an enemy bullet that passes this close (m).")]
+        public float bulletInterceptRadius = 0.055f;
+        [Tooltip("An enemy bullet this close (m) to a moving katana blade is cut.")]
+        public float katanaCutRadius = 0.035f;
+
+        [Header("Thrown objects")]
+        [Tooltip("Off: a fast throw stuns the enemy and knocks its weapon out. On: above the kill speed it kills (bottles, mugs and ashtrays always kill).")]
+        public bool killOnThrow;
+        [Tooltip("Impact speed (game m/s) at which a thrown object stuns.")]
+        public float throwStunSpeed = 2f;
+        [Tooltip("Impact speed (game m/s) at which a thrown object kills, if killOnThrow is on.")]
+        public float throwKillSpeed = 4.5f;
+        [Tooltip("A thrown katana kills above its own kill speed even with killOnThrow off (it's a blade).")]
+        public bool thrownBladeKills = true;
+        public float thrownBladeKillSpeed = 2.5f;
+        [Tooltip("Bottles, mugs and ashtrays break above this impact speed (game m/s).")]
+        public float breakSpeed = 2.5f;
+    }
+
+    [Serializable]
+    public class WeaponSettings
+    {
+        [Header("Pistol")]
+        public int pistolRounds = 4;
+        [Tooltip("Game seconds between shots.")]
+        public float pistolCooldown = 0.3f;
+        [Tooltip("Spread (degrees).")]
+        public float pistolSpread = 0.25f;
+
+        [Header("Shotgun")]
+        public int shotgunShells = 2;
+        public int shotgunPellets = 6;
+        public float shotgunCooldown = 0.9f;
+        public float shotgunSpread = 5.5f;
+
+        [Header("SMG (short bursts)")]
+        [Tooltip("Rounds in a full magazine (no reload).")]
+        public int smgRounds = 15;
+        [Tooltip("Rounds per trigger pull.")]
+        public int smgRoundsPerBurst = 3;
+        [Tooltip("Game seconds between rounds in a burst.")]
+        public float smgRoundInterval = 0.07f;
+        [Tooltip("Game seconds after a burst before the next one.")]
+        public float smgBurstCooldown = 0.35f;
+        public float smgSpread = 1.2f;
+    }
+
+    /// <summary>One controller vibration: strength, length (real seconds) and frequency (0..1).</summary>
+    [Serializable]
+    public struct HapticPulse
+    {
+        [Range(0f, 1f)] public float amplitude;
+        public float seconds;
+        [Range(0f, 1f)] public float frequency;
+
+        public HapticPulse(float amplitude, float seconds, float frequency = 1f)
+        {
+            this.amplitude = amplitude;
+            this.seconds = seconds;
+            this.frequency = frequency;
+        }
+    }
+
+    [Serializable]
+    public class HapticSettings
+    {
+        public HapticPulse pistolShot = new(0.75f, 0.1f);
+        public HapticPulse shotgunShot = new(1f, 0.18f);
+        [Tooltip("Each round of an SMG burst.")]
+        public HapticPulse smgRound = new(0.6f, 0.045f);
+        [Tooltip("Empty gun: played as a few short sharp ticks, so it never feels like a shot.")]
+        public HapticPulse emptyClick = new(0.55f, 0.018f, 0.5f);
+        public int emptyClickTicks = 2;
+        [Tooltip("Real seconds between the empty-gun ticks.")]
+        public float emptyClickGap = 0.05f;
+        public HapticPulse grab = new(0.35f, 0.05f);
+        [Tooltip("Catching something that was flying.")]
+        public HapticPulse catchItem = new(0.6f, 0.08f);
+        public HapticPulse punch = new(0.9f, 0.12f);
+        [Tooltip("A slower punch that only stuns.")]
+        public HapticPulse punchStun = new(0.5f, 0.06f);
+        public HapticPulse katanaCut = new(0.8f, 0.12f);
+        [Tooltip("A bullet cut by the katana or stopped by something you hold.")]
+        public HapticPulse block = new(0.6f, 0.08f);
+        [Tooltip("You got hit (both hands).")]
+        public HapticPulse playerHit = new(1f, 0.4f);
     }
 
     [Serializable]

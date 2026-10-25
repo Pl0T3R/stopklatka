@@ -64,11 +64,24 @@ namespace Stopklatka
         public static float GrabRadius => C.player.grabRadius;
         public static float ThrowBoost => C.player.throwBoost;
         public static float MaxThrowSpeed => C.player.maxThrowSpeed;
+        public static float CatchMinSpeed => C.player.catchMinSpeed;
+        public static float CatchRadiusPerSpeed => C.player.catchRadiusPerSpeed;
+        public static float CatchRadiusBonusMax => C.player.catchRadiusBonusMax;
 
         // Bullets (game-time m/s)
         public static float PlayerBulletSpeed => C.combat.playerBulletSpeed;
         public static float EnemyBulletSpeed => GameMode.Profile.EnemyBulletSpeed;
         public static float BulletLifetime => C.combat.bulletLifetime;
+        public static float BulletInterceptRadius => C.combat.bulletInterceptRadius;
+        public static float KatanaCutRadius => C.combat.katanaCutRadius;
+
+        // Thrown objects (game-time impact speeds)
+        public static bool KillOnThrow => C.combat.killOnThrow;
+        public static float ThrowStunSpeed => C.combat.throwStunSpeed;
+        public static float ThrowKillSpeed => C.combat.throwKillSpeed;
+        public static bool ThrownBladeKills => C.combat.thrownBladeKills;
+        public static float ThrownBladeKillSpeed => C.combat.thrownBladeKillSpeed;
+        public static float BreakSpeed => C.combat.breakSpeed;
 
         // Enemies (school and home differ, see GameMode.cs)
         public static float EnemyWalkSpeed => GameMode.Profile.WalkSpeed;

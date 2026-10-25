@@ -91,6 +91,15 @@ namespace Stopklatka
             ShardSystem.Burst(point + normal * 0.02f, Mats.Get(Mats.Weapon), 3, normal * 1.2f, 0.8f, 0.008f, 0.016f);
         }
 
+        /// <summary>Two bullets met in the air: a small bright pop and a few dark and light specks.</summary>
+        public static void BulletClash(Vector3 point, Vector3 direction)
+        {
+            var f = Flashes.Get(point, Quaternion.LookRotation(direction.sqrMagnitude > 1e-6f ? direction : Vector3.forward));
+            f.Show(0.07f, 0.06f);
+            ShardSystem.Burst(point, Mats.Get(Mats.Weapon), 3, Vector3.zero, 1.0f, 0.006f, 0.012f);
+            ShardSystem.Burst(point, Mats.Get(Mats.Glass), 2, Vector3.zero, 1.2f, 0.006f, 0.01f);
+        }
+
         /// <summary>Bright pop where an enemy was hit, as it shatters.</summary>
         public static void KillFlash(Vector3 point, Vector3 direction)
         {

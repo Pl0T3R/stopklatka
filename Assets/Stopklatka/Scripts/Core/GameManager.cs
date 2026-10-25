@@ -192,8 +192,7 @@ namespace Stopklatka
             TimeController.Instance.SetMode(TimeController.Mode.Fixed, 0.08f);
             Hud.Instance.RedFlash(0.8f);
             Hud.Instance.Title("TRAFIONY", 2.2f, Red, pulse: true);
-            SoundBank.Instance?.PlayUi(Sfx.Death, 1f);
-            foreach (var hand in FindObjectsByType<ControllerHand>(FindObjectsSortMode.None)) hand.Haptic(1f, 0.4f);
+            SoundBank.Instance?.PlayUi(Sfx.Death, 1f);   // the hit haptic comes from PlayerHealth
             yield return new WaitForSecondsRealtime(2.2f);
             _flow = null;
             StartWave(Wave);
@@ -247,9 +246,14 @@ namespace Stopklatka
             {
                 var spot = rooms.FindPickupSpot(rig.FloorPosition);
                 float roll = Random.value;
-                if (roll < 0.45f) Factory.CreateBottle(spot, Quaternion.identity);
-                else if (roll < 0.75f) Factory.CreateKatana(spot, Quaternion.Euler(0f, Random.Range(0f, 360f), 90f));
-                else Factory.CreateGun(Random.value < 0.3f ? GunKind.Shotgun : GunKind.Pistol, spot, Random.rotation);
+                if (roll < 0.45f) Factory.CreateThrowable(Factory.RandomThrowableKind(), spot, Quaternion.identity);
+                else if (roll < 0.7f) Factory.CreateKatana(spot, Quaternion.Euler(0f, Random.Range(0f, 360f), 90f));
+                else
+                {
+                    float g = Random.value;
+                    var kind = g < 0.3f ? GunKind.Shotgun : g < 0.6f ? GunKind.Smg : GunKind.Pistol;
+                    Factory.CreateGun(kind, spot, Random.rotation);
+                }
             }
         }
 

@@ -56,11 +56,20 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 - [ ] No exceptions in the logs. The log shows `display 90 Hz` (120 Hz when `performance.targetRefreshRate` in GameConfig is 120), `physics step 1/90 s` and the eye texture size.
 - [ ] With 8 enemies on screen, OVR Metrics or `metavr perf` shows a stable 90 fps and p95 frame time under 11.1 ms (with the 120 Hz option: 120 fps, 8.3 ms). The resolution drops only when needed.
 - [ ] Time nearly stops when standing still and speeds up with head or hand movement (details in "Time test scene" below).
-- [ ] All four weapons work:
+- [ ] All the weapons work:
   - pistol: 4 shots,
   - shotgun: 2 shots, spread,
-  - katana: cuts enemies and blocks bullets,
+  - SMG: 3-round bursts, 5 bursts (15 rounds), small spread, one time pulse per burst,
+  - katana: cuts enemies, blocks bullets and cuts bullets in flight with a swing,
   - bottle: breaks and stuns.
+- [ ] An empty gun clicks on every trigger pull: a click sound plus two short sharp haptic ticks, clearly different from the single strong buzz of a shot.
+- [ ] Thrown items with `combat.killOnThrow` off (default): a fast throw staggers the enemy and knocks its gun out, it doesn't kill. A thrown katana still kills (`thrownBladeKills`). With `killOnThrow` on: above `throwKillSpeed` it kills, bottles, mugs and ashtrays always kill.
+- [ ] Throwables: bottle (white glass), mug and ashtray (black, break into dark shards), block and ball (black, bounce). All stun.
+- [ ] Fist: an empty hand shows a black faceted fist over the controller, hidden while holding something. A punch faster than about 2 m/s shatters the enemy (punch sound, strong haptic). A slower push (1 to 2 m/s) only staggers it and knocks its gun out. Slower contact does nothing.
+- [ ] Shooting bullets down: your bullet passing within about 5 cm of an enemy bullet destroys both with a small flash and a high "clink".
+- [ ] Catching: hold the grip with an empty hand and a flying item (a thrown bottle, a gun dropped by a dying or stunned enemy) is caught when it reaches the hand, with a stronger haptic. Pressing the grip just as it passes also works.
+- [ ] Haptics on shot, grab, catch, punch, katana cut, blocked bullet, and on both hands when you're hit (also in the time test scene).
+- [ ] Without a scan, thrown items land on an invisible floor at your floor height (log: `fallback floor at y = ...`).
 - [ ] Throws fly where the hand was moving.
 - [ ] Bullets stop at real walls. Enemies walk around desks.
 - [ ] Walking out of the scanned area pauses the game with plain passthrough. Walking back resumes it.
@@ -89,19 +98,32 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
 - [ ] The enemy on the right freezes and moves with time like the pendulum. Killed, it comes back after 3 s.
 - [ ] The left menu button puts everything in front of you again. A left thumbstick click shows FPS, motion, target and counters.
 - [ ] Recentering (hold the Meta button) doesn't make time jump.
+- [ ] Stage 3 (weapons):
+  - Floating in an arc in front of you: katana, shotgun, SMG, pistol, bottle, mug, ashtray, block.
+  - The **X button** lobs a pistol in an arc toward your right hand, in game time. Hold the right grip and let it fly into the hand: it's caught. Standing still, it nearly freezes mid-air. The counter shows `rzuty X`.
+  - Shoot the turret's bullet with the pistol or SMG: both bullets vanish with a flash and a clink.
+  - Swing the katana through a nearly frozen turret bullet: it's cut (sparks, deflect sound, haptic).
+  - Empty a gun, keep pulling: click plus double haptic tick on every pull. Throw the empty gun at the enemy: it staggers and drops its pistol (catch the pistol in the air).
+  - Punch the enemy fast: it shatters. Push it slowly: nothing, or a stagger above 1 m/s.
+  - A turret hit vibrates both controllers.
 - [ ] Afterwards: **Stopklatka → Build Settings: Game Scene**.
 
 ## Where to tune (most likely needed on the real device)
 
 - `Resources/GameConfig.asset` (created by Build Game, edit it in the Inspector, also in Play mode):
   - `time`: time feel (minimum scale, speeds for full time, head turn weight, response curve, smoothing, action pulse),
-  - `player`, `combat`, `enemies`: grab radius, throws, player bullet speed, reaction times,
+  - `player`: grab radius, throws, catching (`catchMinSpeed`, `catchRadiusPerSpeed`, `catchRadiusBonusMax`), the fist (`fistEnabled`, `punchKillSpeed`, `punchStunSpeed`, `punchRadius`),
+  - `combat`: player bullet speed, shooting bullets down (`bulletInterceptRadius`), katana bullet cuts (`katanaCutRadius`), thrown objects (`killOnThrow`, stun/kill/break speeds, `thrownBladeKills`),
+  - `weapons`: ammo, cooldowns and spread of the pistol, shotgun and SMG (rounds, rounds per burst, interval between rounds),
+  - `haptics`: strength, length and frequency of every vibration (shots, empty click ticks, grab, catch, punch, cut, block, getting hit),
+  - `enemies`: reaction times, how many are armed,
   - `school` / `home`: per-mode numbers (spawn distances, enemies at once and per wave, enemy speed and bullet speed, how often enemies spawn in your room). The factory defaults are in `Scripts/Core/GameMode.cs`,
   - `performance`: refresh rate (90 or 120), foveation,
   - `debug`: the wrist time gauge and the FPS readout at start.
 - `Scripts/Visuals/Factory.cs`:
   - `GunHoldPosition` / `GunHoldEuler`: if guns sit tilted in the hand, fix this first,
-  - the katana and bottle hold poses.
+  - the katana and throwable hold poses (`CreateKatana`, `CreateThrowable`),
+  - `FistPosition` / `FistEuler`: where the black fist sits on the controller (right hand; the left is mirrored). Thumb on top by default.
 - `Scripts/UI/Hud.cs` and `MenuTarget.cs`: text scale. TextMesh sizes are estimates.
 - `Scripts/World/PassthroughStyle.cs`: the BIAŁY (`SetBrightnessContrastSaturation`) and SUPERHOT (gradient color map) looks. Keep them moderate for safety.
 - `Editor/StopklatkaBuilder.cs` → `CreateMaterials`: all colors (lit and shadow tone, rim, highlight, gloss). Re-run Stopklatka → Build Game after changing them.
@@ -119,4 +141,6 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
 - **Reveal effect:** during spawn-in the enemy parts use the `EnemyReveal` material (keyword `_REVEAL`) plus a `MaterialPropertyBlock`, which takes them out of the SRP batcher for 0.9 s. If the keyword variant is stripped from the build, enemies appear without the effect; keep the material in `Resources/Materials`.
 - **Boundary suppression** works only while the passthrough layer is active. `PassthroughStyle.Update` keeps it in sync.
 - **Shader errors** in `Shaders/*.shader` (URP HLSL with Meta's occlusion include) show up as pink materials. Fix the shaders before anything else.
+- **Fist and hand poses** (`Factory.FistPosition/FistEuler`, hold poses) are guesses made without a headset. If the fist doesn't sit over the real hand, or punches register too easily while walking (hand speed includes walking), tune the pose and `player.punchKillSpeed` / `punchStunSpeed` first.
+- **Haptics:** Touch Plus vibrations shorter than about 20 ms may be too weak to feel; if the empty-gun double tick is not noticeable, raise `haptics.emptyClick.seconds` or `amplitude`.
 - **Safety:** enemies spawn only inside scanned rooms, at least 2.5 m away at school and 1.8 m at home (1.2 m at the very least in tiny rooms). Keep it that way. Don't add mechanics that need running or fast backing up.

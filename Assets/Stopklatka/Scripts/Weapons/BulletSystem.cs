@@ -5,6 +5,7 @@ namespace Stopklatka
     /// <summary>Pooled bullets: a small dark slug plus a streak that grows behind it and fades toward its tail.</summary>
     public static class BulletSystem
     {
+        const int MaxBullets = 48;   // budget (PLAN.md)
         static Pool<Bullet> _pool;
         static Mesh _slugMesh, _streakMesh;
 
@@ -12,11 +13,23 @@ namespace Stopklatka
 
         public static void Fire(Vector3 position, Vector3 velocity, BulletOwner owner, Enemy shooter)
         {
+            var active = PoolInstance.Active;
+            if (active.Count >= MaxBullets)
+            {
+                // over budget: drop the oldest of your own bullets, else the oldest of all
+                Bullet oldest = active[0];
+                for (int i = 0; i < active.Count; i++)
+                    if (active[i].Owner == BulletOwner.Player) { oldest = active[i]; break; }
+                Release(oldest);
+            }
             var b = PoolInstance.Get(position, Quaternion.LookRotation(velocity));
             b.Launch(velocity, owner, shooter);
         }
 
         public static void Release(Bullet b) => PoolInstance.Release(b);
+
+        /// <summary>Bullets in flight (for shooting them down and cutting them). Don't keep the list.</summary>
+        public static System.Collections.Generic.IReadOnlyList<Bullet> Active => PoolInstance.Active;
 
         public static void ClearAll() => _pool?.ReleaseAll();
 

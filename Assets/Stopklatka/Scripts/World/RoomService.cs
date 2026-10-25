@@ -26,6 +26,7 @@ namespace Stopklatka
         public string Problem { get; private set; }
 
         SceneNavigation _nav;
+        Transform _fallbackFloor;
 
         void Awake() => Instance = this;
 
@@ -37,6 +38,7 @@ namespace Stopklatka
             if (!await EnsureScenePermission())
             {
                 Problem = "Brak zgody na dane o pomieszczeniu. Włącz ją w Ustawieniach > Prywatność.";
+                CreateFallbackFloor();
                 Ready = true;
                 return;
             }
@@ -45,6 +47,7 @@ namespace Stopklatka
             if (mruk == null)
             {
                 Problem = "Brak MRUK w scenie. Uruchom w Unity: Stopklatka > Build Game.";
+                CreateFallbackFloor();
                 Ready = true;
                 return;
             }
@@ -62,6 +65,7 @@ namespace Stopklatka
                 while (!NavReady && Time.realtimeSinceStartup < until) await Task.Yield();
                 if (!NavReady) Debug.LogWarning("[Stopklatka] NavMesh not ready, enemies will walk in straight lines.");
             }
+            else CreateFallbackFloor();
             Ready = true;
         }
 
@@ -87,6 +91,24 @@ namespace Stopklatka
             NavAgentTypeId = surface != null ? surface.agentTypeID : 0;
             NavReady = true;
             Debug.Log($"[Stopklatka] NavMesh ready, agent type {NavAgentTypeId}");
+        }
+
+        /// <summary>
+        /// Without a scan nothing stops thrown things from falling forever: one big invisible floor
+        /// on the room layer at the tracked floor height (y = 0 with floor-level tracking).
+        /// The time test scene has its own floor and no RoomService, so there is never a second one.
+        /// </summary>
+        void CreateFallbackFloor()
+        {
+            if (_fallbackFloor != null) return;
+            var go = new GameObject("FallbackFloor") { layer = Layers.Room };
+            const float thickness = 0.2f;
+            float floorY = PlayerRig.Instance != null ? PlayerRig.Instance.FloorY : 0f;
+            var center = PlayerRig.Instance != null ? PlayerRig.Instance.FloorPosition : Vector3.zero;
+            go.transform.position = new Vector3(center.x, floorY - thickness * 0.5f, center.z);
+            go.AddComponent<BoxCollider>().size = new Vector3(40f, thickness, 40f);
+            _fallbackFloor = go.transform;
+            Debug.Log($"[Stopklatka] No room scan: fallback floor at y = {floorY:F2}");
         }
 
         static async Task<bool> EnsureScenePermission()

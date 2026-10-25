@@ -231,6 +231,8 @@ namespace Stopklatka
             if (Gun == null) return;
             SetGunVisible(true);
             _gunRenderers = null;
+            // the weapon starts inside this body: don't let it get shoved out sideways, so it flies up and can be caught
+            foreach (var c in GetComponents<Collider>()) Gun.IgnoreCollisionsBriefly(c);
             Gun.DropFromEnemy(velocity);
             Gun = null;
         }

@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace Stopklatka
 {
-    public enum Sfx { Pistol, Shotgun, Empty, Shatter, GlassBreak, Swing, Slice, Deflect, Thud, Grab, Chime, Death, Spawn, Ricochet }
+    public enum Sfx { Pistol, Shotgun, Empty, Shatter, GlassBreak, Swing, Slice, Deflect, Thud, Grab, Chime, Death, Spawn, Ricochet, Smg, Punch, Clash }
 
     /// <summary>
     /// All sounds are synthesized at startup (no audio files). 3D one-shots come from a pool of
@@ -41,6 +41,9 @@ namespace Stopklatka
             _clips[Sfx.Death] = Thud("death", 0.9f, 55f, rng);
             _clips[Sfx.Spawn] = Shatter("spawn", 0.5f, 900f, 2500f, rng, reverse: true);
             _clips[Sfx.Ricochet] = Ping("ricochet", 0.22f, 2200f);
+            _clips[Sfx.Smg] = Gunshot("smg", 0.2f, 0.85f, 120f, rng);
+            _clips[Sfx.Punch] = Thud("punch", 0.22f, 85f, rng);
+            _clips[Sfx.Clash] = Ping("clash", 0.3f, 4600f);
 
             for (int i = 0; i < Voices; i++)
             {

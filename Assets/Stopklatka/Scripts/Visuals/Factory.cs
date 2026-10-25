@@ -4,15 +4,31 @@ using UnityEngine.AI;
 
 namespace Stopklatka
 {
-    /// <summary>Builds enemies, weapons, bottles and menu targets from code-generated meshes.</summary>
+    /// <summary>Builds enemies, weapons, throwables, the player's fists and menu targets from code-generated meshes.</summary>
     public static class Factory
     {
-        static Mesh _pistol, _shotgun, _katanaHandle, _katanaBlade, _bottle, _target;
+        static Mesh _pistol, _shotgun, _smg, _katanaHandle, _katanaBlade, _bottle, _mug, _ashtray, _block, _ball, _target;
+        static Mesh _fistLeft, _fistRight;
 
         // Pose of a held gun relative to the controller anchor. Barrel follows the controller's forward axis.
         // If guns feel tilted on the headset, tune these two values first.
         public static Vector3 GunHoldPosition = new Vector3(0f, -0.015f, 0.005f);
         public static Vector3 GunHoldEuler = new Vector3(0f, 0f, 0f);
+
+        // Pose of the right fist relative to the right controller anchor (the left one is mirrored).
+        // Rolled so the thumb is on top and the back of the hand faces outward, like a hand around
+        // the controller's grip. Tune on the headset if the fist doesn't sit over your real hand.
+        public static Vector3 FistPosition = new Vector3(0f, -0.02f, -0.01f);
+        public static Vector3 FistEuler = new Vector3(0f, 0f, -90f);
+        /// <summary>Center of the punch hit sphere in the fist mesh's own space (the knuckles).</summary>
+        public static readonly Vector3 FistHitCenter = new Vector3(0f, 0f, 0.04f);
+
+        public static void FistPose(bool left, out Vector3 position, out Quaternion rotation)
+        {
+            float m = left ? -1f : 1f;
+            position = new Vector3(FistPosition.x * m, FistPosition.y, FistPosition.z);
+            rotation = Quaternion.Euler(FistEuler.x, FistEuler.y * m, FistEuler.z * m);
+        }
 
         public static Enemy CreateEnemy(Vector3 position, Quaternion rotation, int wave, GunKind? gun)
         {
@@ -55,22 +71,32 @@ namespace Stopklatka
         public static Gun CreateGun(GunKind kind, Vector3 position, Quaternion rotation)
         {
             EnsureMeshes();
-            var go = new GameObject(kind == GunKind.Shotgun ? "Shotgun" : "Pistol");
+            var go = new GameObject(kind.ToString());
             go.transform.SetPositionAndRotation(position, rotation);
-            MeshKit.Part("Mesh", go.transform, kind == GunKind.Shotgun ? _shotgun : _pistol, Mats.Get(Mats.Weapon));
+            var mesh = kind switch { GunKind.Shotgun => _shotgun, GunKind.Smg => _smg, _ => _pistol };
+            MeshKit.Part("Mesh", go.transform, mesh, Mats.Get(Mats.Weapon));
 
             var col = go.AddComponent<BoxCollider>();
-            if (kind == GunKind.Shotgun) { col.center = new Vector3(0f, 0.01f, 0.18f); col.size = new Vector3(0.05f, 0.1f, 0.85f); }
-            else { col.center = new Vector3(0f, -0.01f, 0.05f); col.size = new Vector3(0.04f, 0.12f, 0.19f); }
+            switch (kind)
+            {
+                case GunKind.Shotgun: col.center = new Vector3(0f, 0.01f, 0.18f); col.size = new Vector3(0.05f, 0.1f, 0.85f); break;
+                case GunKind.Smg: col.center = new Vector3(0f, -0.048f, 0.043f); col.size = new Vector3(0.045f, 0.19f, 0.365f); break;
+                default: col.center = new Vector3(0f, -0.01f, 0.05f); col.size = new Vector3(0.04f, 0.12f, 0.19f); break;
+            }
 
             var rb = go.AddComponent<Rigidbody>();
-            rb.mass = kind == GunKind.Shotgun ? 1.6f : 0.9f;
+            rb.mass = kind switch { GunKind.Shotgun => 1.6f, GunKind.Smg => 1.2f, _ => 0.9f };
             rb.linearDamping = 0.05f;
             rb.angularDamping = 0.3f;
 
             var muzzle = new GameObject("Muzzle").transform;
             muzzle.SetParent(go.transform, false);
-            muzzle.localPosition = kind == GunKind.Shotgun ? new Vector3(0f, 0.03f, 0.62f) : new Vector3(0f, 0.022f, 0.155f);
+            muzzle.localPosition = kind switch
+            {
+                GunKind.Shotgun => new Vector3(0f, 0.03f, 0.62f),
+                GunKind.Smg => new Vector3(0f, 0.025f, 0.225f),
+                _ => new Vector3(0f, 0.022f, 0.155f),
+            };
 
             var gunComp = go.AddComponent<Gun>();
             gunComp.Kind = kind;
@@ -117,22 +143,103 @@ namespace Stopklatka
             return k;
         }
 
-        public static Throwable CreateBottle(Vector3 position, Quaternion rotation)
+        public static Throwable CreateBottle(Vector3 position, Quaternion rotation) =>
+            CreateThrowable(ThrowableKind.Bottle, position, rotation);
+
+        /// <summary>A random dark throwable or a bottle, for pickups.</summary>
+        public static ThrowableKind RandomThrowableKind()
+        {
+            float r = UnityEngine.Random.value;
+            return r < 0.35f ? ThrowableKind.Bottle : r < 0.55f ? ThrowableKind.Mug : r < 0.7f ? ThrowableKind.Ashtray
+                : r < 0.85f ? ThrowableKind.Block : ThrowableKind.Ball;
+        }
+
+        /// <summary>Bottle (white glass), mug, ashtray, block or ball (black matte).</summary>
+        public static Throwable CreateThrowable(ThrowableKind kind, Vector3 position, Quaternion rotation)
         {
             EnsureMeshes();
-            var go = new GameObject("Bottle");
+            var go = new GameObject(kind.ToString());
             go.transform.SetPositionAndRotation(position, rotation);
-            MeshKit.Part("Mesh", go.transform, _bottle, Mats.Get(Mats.Glass));
-            var col = go.AddComponent<CapsuleCollider>();
-            col.center = new Vector3(0f, 0.02f, 0f);
-            col.height = 0.28f;
-            col.radius = 0.037f;
             var rb = go.AddComponent<Rigidbody>();
-            rb.mass = 0.45f;
+            var holdPosition = new Vector3(0f, -0.01f, 0.04f);
+            var holdEuler = Vector3.zero;
+            switch (kind)
+            {
+                case ThrowableKind.Bottle:
+                {
+                    MeshKit.Part("Mesh", go.transform, _bottle, Mats.Get(Mats.Glass));
+                    var col = go.AddComponent<CapsuleCollider>();
+                    col.center = new Vector3(0f, 0.02f, 0f);
+                    col.height = 0.28f;
+                    col.radius = 0.037f;
+                    rb.mass = 0.45f;
+                    holdPosition = new Vector3(0f, -0.01f, 0.01f);
+                    holdEuler = new Vector3(90f, 0f, 0f);   // neck forward
+                    break;
+                }
+                case ThrowableKind.Mug:
+                {
+                    MeshKit.Part("Mesh", go.transform, _mug, Mats.Get(Mats.Weapon));
+                    var col = go.AddComponent<BoxCollider>();
+                    col.center = new Vector3(0.012f, 0f, 0f);
+                    col.size = new Vector3(0.104f, 0.096f, 0.08f);
+                    rb.mass = 0.35f;
+                    break;
+                }
+                case ThrowableKind.Ashtray:
+                {
+                    MeshKit.Part("Mesh", go.transform, _ashtray, Mats.Get(Mats.Weapon));
+                    var col = go.AddComponent<BoxCollider>();
+                    col.size = new Vector3(0.135f, 0.03f, 0.135f);
+                    rb.mass = 0.7f;
+                    holdPosition = new Vector3(0f, -0.015f, 0.06f);
+                    break;
+                }
+                case ThrowableKind.Block:
+                {
+                    MeshKit.Part("Mesh", go.transform, _block, Mats.Get(Mats.Weapon));
+                    go.AddComponent<BoxCollider>().size = Vector3.one * 0.085f;
+                    rb.mass = 0.6f;
+                    break;
+                }
+                default:
+                {
+                    MeshKit.Part("Mesh", go.transform, _ball, Mats.Get(Mats.Weapon));
+                    go.AddComponent<SphereCollider>().radius = 0.045f;
+                    rb.mass = 0.4f;
+                    rb.angularDamping = 0.4f;
+                    break;
+                }
+            }
             var t = go.AddComponent<Throwable>();
-            t.HoldPosition = new Vector3(0f, -0.01f, 0.01f);
-            t.HoldEuler = new Vector3(90f, 0f, 0f);   // neck forward
+            t.Setup(kind);
+            t.HoldPosition = holdPosition;
+            t.HoldEuler = holdEuler;
             return t;
+        }
+
+        /// <summary>The player's black faceted fist (built palm down, knuckles along +Z), mirrored for the left hand.</summary>
+        public static Mesh FistMesh(bool left)
+        {
+            if (left && _fistLeft != null) return _fistLeft;
+            if (!left && _fistRight != null) return _fistRight;
+            float m = left ? -1f : 1f;
+            var rng = new System.Random(left ? 31 : 32);
+            var f = new MeshKit.Builder();
+            Vector3 V(float x, float y, float z) => new Vector3(x * m, y, z);
+            Quaternion R(float x, float y, float z) => Quaternion.Euler(x, y * m, z * m);
+
+            f.Box(V(0f, 0f, -0.008f), new Vector3(0.084f, 0.062f, 0.08f), R(0f, 0f, 0f), 0.92f, 0.003f, rng);          // back of the hand and palm
+            for (int i = 0; i < 4; i++)                                                                                  // curled fingers, one knuckle each
+            {
+                float x = -0.03f + i * 0.02f;
+                f.Box(V(x, 0.004f, 0.044f), new Vector3(0.019f, 0.044f - i * 0.003f, 0.03f), R(6f, 0f, 0f), 0.9f, 0.0015f, rng);
+            }
+            f.Box(V(-0.046f, -0.012f, 0.02f), new Vector3(0.02f, 0.024f, 0.052f), R(0f, 28f, 0f), 0.85f, 0.0015f, rng); // thumb across the fingers
+            f.Prism(V(0f, -0.004f, -0.046f), V(0f, -0.008f, -0.16f), 0.031f, 0.036f, 6, 0.002f, rng);                // wrist cuff
+            var mesh = f.ToMesh(left ? "Fist Left" : "Fist Right");
+            if (left) _fistLeft = mesh; else _fistRight = mesh;
+            return mesh;
         }
 
         public static MenuTarget CreateMenuTarget(string label, Vector3 position, string material, float size, Action onActivated)
@@ -172,6 +279,16 @@ namespace Stopklatka
             s.Prism(new Vector3(0f, 0.005f, 0.22f), new Vector3(0f, 0.005f, 0.4f), 0.02f, 0.02f, 8);                                    // pump
             _shotgun = s.ToMesh("Shotgun");
 
+            // SMG: about 35 cm, long magazine down in front of the grip, stub stock
+            var m = new MeshKit.Builder();
+            m.Box(new Vector3(0f, -0.05f, -0.012f), new Vector3(0.03f, 0.095f, 0.036f), Quaternion.Euler(-14f, 0f, 0f), 1f, 0.002f, rng);  // grip
+            m.Box(new Vector3(0f, 0.02f, 0.06f), new Vector3(0.038f, 0.05f, 0.24f), Quaternion.identity, 0.9f, 0.002f, rng);                // receiver
+            m.Box(new Vector3(0f, -0.075f, 0.1f), new Vector3(0.022f, 0.13f, 0.034f), Quaternion.Euler(8f, 0f, 0f), 1f, 0.001f, rng);       // magazine
+            m.Box(new Vector3(0f, 0.008f, -0.1f), new Vector3(0.026f, 0.036f, 0.08f), Quaternion.Euler(4f, 0f, 0f), 1f, 0.001f, rng);      // stock
+            m.Box(new Vector3(0f, -0.012f, 0.03f), new Vector3(0.012f, 0.022f, 0.045f), Quaternion.identity);                               // trigger guard
+            m.Prism(new Vector3(0f, 0.025f, 0.18f), new Vector3(0f, 0.025f, 0.225f), 0.01f, 0.009f, 6);                                    // barrel
+            _smg = m.ToMesh("SMG");
+
             var h = new MeshKit.Builder();
             h.Box(new Vector3(0f, 0f, 0.02f), new Vector3(0.032f, 0.036f, 0.28f), Quaternion.identity, 1f, 0.001f, rng);
             h.Prism(new Vector3(0f, 0f, 0.155f), new Vector3(0f, 0f, 0.172f), 0.05f, 0.05f, 8);   // guard
@@ -192,6 +309,31 @@ namespace Stopklatka
             bo.Prism(new Vector3(0f, 0.06f, 0f), new Vector3(0f, 0.1f, 0f), 0.036f, 0.014f, 8);
             bo.Prism(new Vector3(0f, 0.1f, 0f), new Vector3(0f, 0.16f, 0f), 0.013f, 0.012f, 8);
             _bottle = bo.ToMesh("Bottle");
+
+            var mu = new MeshKit.Builder();
+            mu.Prism(new Vector3(0f, -0.048f, 0f), new Vector3(0f, 0.048f, 0f), 0.04f, 0.041f, 8, 0.001f, rng);   // body
+            mu.Box(new Vector3(0.052f, 0.024f, 0f), new Vector3(0.024f, 0.012f, 0.012f), Quaternion.identity);      // handle: top
+            mu.Box(new Vector3(0.052f, -0.024f, 0f), new Vector3(0.024f, 0.012f, 0.012f), Quaternion.identity);     // bottom
+            mu.Box(new Vector3(0.064f, 0f, 0f), new Vector3(0.012f, 0.06f, 0.012f), Quaternion.identity);            // side
+            _mug = mu.ToMesh("Mug");
+
+            var a = new MeshKit.Builder();
+            a.Prism(new Vector3(0f, -0.013f, 0f), new Vector3(0f, 0.011f, 0f), 0.068f, 0.06f, 8, 0.001f, rng);
+            for (int i = 0; i < 3; i++)   // cigarette rests on the rim
+            {
+                float ang = i * 120f;
+                var dir = Quaternion.Euler(0f, ang, 0f) * Vector3.forward;
+                a.Box(dir * 0.052f + Vector3.up * 0.015f, new Vector3(0.022f, 0.009f, 0.016f), Quaternion.Euler(0f, ang, 0f));
+            }
+            _ashtray = a.ToMesh("Ashtray");
+
+            var bl = new MeshKit.Builder();
+            bl.Box(Vector3.zero, Vector3.one * 0.085f, Quaternion.identity, 0.94f, 0.002f, rng);
+            _block = bl.ToMesh("Block");
+
+            var ba = new MeshKit.Builder();
+            ba.Ico(Vector3.zero, Vector3.one * 0.045f, 0.06f, rng);
+            _ball = ba.ToMesh("Ball");
 
             var t = new MeshKit.Builder();
             t.Octahedron(Vector3.zero, 0.5f, 0.75f);

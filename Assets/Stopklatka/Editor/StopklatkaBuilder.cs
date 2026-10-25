@@ -223,7 +223,8 @@ namespace Stopklatka.EditorTools
 
             // Scene understanding: load every room ourselves after the permission prompt
             var mrukGo = InstantiatePrefab("MRUK", "com.meta.xr.mrutilitykit") ?? new GameObject("MRUK");
-            var mruk = mrukGo.GetComponent<MRUK>() ?? mrukGo.AddComponent<MRUK>();
+            // TryGetComponent, not '??': in the editor a missing component is a fake null that '??' doesn't see
+            if (!mrukGo.TryGetComponent(out MRUK mruk)) mruk = mrukGo.AddComponent<MRUK>();
             mruk.SceneSettings ??= new MRUK.MRUKSettings();
             mruk.SceneSettings.DataSource = MRUK.SceneDataSource.Device;
             mruk.SceneSettings.LoadSceneOnStartup = false;
@@ -331,7 +332,7 @@ namespace Stopklatka.EditorTools
         {
             var rigGo = InstantiatePrefab("OVRCameraRig", "com.meta.xr.sdk.core");
             if (rigGo == null) { Debug.LogError("[Stopklatka] OVRCameraRig prefab not found. Is Meta XR Core SDK installed?"); return null; }
-            var ovr = rigGo.GetComponent<OVRManager>() ?? rigGo.AddComponent<OVRManager>();
+            if (!rigGo.TryGetComponent(out OVRManager ovr)) ovr = rigGo.AddComponent<OVRManager>();
             ovr.trackingOriginType = OVRManager.TrackingOrigin.FloorLevel;
             ovr.isInsightPassthroughEnabled = true;
             ovr.shouldBoundaryVisibilityBeSuppressed = suppressBoundary;
@@ -356,7 +357,7 @@ namespace Stopklatka.EditorTools
             return rigGo;
         }
 
-        /// <summary>The managers every scene needs, plus both hands.</summary>
+        /// <summary>The managers every scene needs, plus both hands (grab, throw, fist).</summary>
         static GameObject CreateGameRoot(string name, bool alwaysShowTimeIndicator)
         {
             var game = new GameObject(name);
@@ -370,9 +371,11 @@ namespace Stopklatka.EditorTools
             var left = new GameObject("LeftHand");
             left.transform.SetParent(game.transform, false);
             left.AddComponent<ControllerHand>().IsLeft = true;
+            left.AddComponent<Fist>();
             var right = new GameObject("RightHand");
             right.transform.SetParent(game.transform, false);
             right.AddComponent<ControllerHand>().IsLeft = false;
+            right.AddComponent<Fist>();
             return game;
         }
 

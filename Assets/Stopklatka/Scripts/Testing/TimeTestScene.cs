@@ -10,7 +10,11 @@ namespace Stopklatka
     ///   - a turret about 4 m ahead fires a slow enemy bullet at your head every 2.5 game seconds,
     ///   - a pendulum swings in game time, so you can watch time slow down and speed up,
     ///   - an armed enemy ahead on the right (comes back 3 s after you kill it),
-    ///   - a pistol, a katana and a bottle float within reach.
+    ///   - weapons and throwables float within reach in an arc: pistol, SMG, shotgun, katana,
+    ///     bottle, mug, ashtray, block,
+    ///   - the X button lobs a pistol in an arc toward your right hand (game time, so you can
+    ///     catch it in slow motion: hold the right grip and let it fly into your hand).
+    /// The turret's bullets are targets for shooting bullets down and cutting them with the katana.
     /// Hits are only counted. The left menu button puts everything in front of you again;
     /// a left thumbstick click shows the counters.
     /// Stand with a few metres of free space ahead: nothing here knows where your real walls are.
@@ -29,15 +33,22 @@ namespace Stopklatka
         public float EnemyDistance = 4.5f;
         [Tooltip("Real seconds before a killed enemy comes back.")]
         public float EnemyRespawnSeconds = 3f;
+        [Tooltip("X button: how far ahead (m) the pistol is lobbed from.")]
+        public float LobDistance = 2.4f;
+        [Tooltip("X button: game seconds the lobbed pistol takes to reach your right hand.")]
+        public float LobFlightTime = 0.9f;
 
         const float PendulumPeriod = 2.4f;   // game seconds
 
+        const int MaxLobbed = 3;
+
         readonly List<GameObject> _props = new();
+        readonly List<Grabbable> _lobbed = new();
         Transform _turretHead, _muzzle, _pendulum;
         Enemy _enemy;
         Vector3 _origin, _forward, _right;
         float _nextShot, _respawnAt = -1f;
-        int _hits, _shots;
+        int _hits, _shots, _lobs;
         bool _ready, _enemyUp;
 
         void Awake()
@@ -67,7 +78,8 @@ namespace Stopklatka
             Layout();
             Hud.Instance.Title("TEST CZASU", 2.5f, Color.white, pulse: true);
             Hud.Instance.Sub("Stój: czas prawie staje. Ruszaj się: czas płynie.\nStrzał, rzut, chwyt: krótki impuls.\n" +
-                             "Lewy kontroler: przycisk menu ustawia wszystko od nowa,\nkliknięcie gałki pokazuje liczniki.", 10f);
+                             "X: rzut pistoletu do prawej ręki (trzymaj grip, żeby złapać).\n" +
+                             "Lewy kontroler: przycisk menu ustawia wszystko od nowa,\nkliknięcie gałki pokazuje liczniki.", 12f);
             _ready = true;
         }
 
@@ -76,7 +88,7 @@ namespace Stopklatka
             var perf = PerformanceManager.Instance;
             var time = TimeController.Instance;
             if (perf != null && perf.ShowReadout && time != null)
-                Hud.Instance.Perf($"{perf.Readout()}\nruch {time.Motion:F2}  cel x{time.Target:F2}\ntrafienia {_hits}  strzały {_shots}");
+                Hud.Instance.Perf($"{perf.Readout()}\nruch {time.Motion:F2}  cel x{time.Target:F2}\ntrafienia {_hits}  strzały {_shots}  rzuty X {_lobs}");
             else Hud.Instance.Perf("");
 
             if (!_ready) return;
@@ -85,6 +97,8 @@ namespace Stopklatka
                 Layout();
                 return;
             }
+            // Button.One on the left controller is X
+            if (OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch)) LobPistol();
 
             UpdateTurret();
             if (_pendulum != null)
@@ -110,11 +124,33 @@ namespace Stopklatka
             BuildPendulum(_origin + _forward * 2.2f - _right * 1.3f);
             _respawnAt = SpawnEnemy ? Time.unscaledTime : -1f;
 
-            var near = new Vector3(head.position.x, 0f, head.position.z) + _forward * 0.45f;
-            var pistol = Factory.CreateGun(GunKind.Pistol, near + _right * 0.3f + Vector3.up * (eye - 0.45f), Quaternion.LookRotation(_forward));
-            var katana = Factory.CreateKatana(near - _right * 0.35f + Vector3.up * (eye - 0.75f), Quaternion.LookRotation(Vector3.up, _forward));
-            var bottle = Factory.CreateBottle(near + _right * 0.55f + Vector3.up * (eye - 0.5f), Quaternion.identity);
-            foreach (var g in new Grabbable[] { pistol, katana, bottle }) g.SetHovering(true);
+            // props float in an arc in front of you, at about waist to chest height
+            var center = new Vector3(head.position.x, 0f, head.position.z);
+            var props = new Grabbable[]
+            {
+                Factory.CreateKatana(Vector3.zero, Quaternion.identity),
+                Factory.CreateGun(GunKind.Shotgun, Vector3.zero, Quaternion.identity),
+                Factory.CreateGun(GunKind.Smg, Vector3.zero, Quaternion.identity),
+                Factory.CreateGun(GunKind.Pistol, Vector3.zero, Quaternion.identity),
+                Factory.CreateThrowable(ThrowableKind.Bottle, Vector3.zero, Quaternion.identity),
+                Factory.CreateThrowable(ThrowableKind.Mug, Vector3.zero, Quaternion.identity),
+                Factory.CreateThrowable(ThrowableKind.Ashtray, Vector3.zero, Quaternion.identity),
+                Factory.CreateThrowable(ThrowableKind.Block, Vector3.zero, Quaternion.identity),
+            };
+            for (int i = 0; i < props.Length; i++)
+            {
+                // -70 deg (left) .. +70 deg (right), 0.5 m away, alternating heights
+                float angle = Mathf.Lerp(-70f, 70f, i / (float)(props.Length - 1));
+                var dir = Quaternion.AngleAxis(angle, Vector3.up) * _forward;
+                var pos = center + dir * 0.5f + Vector3.up * (eye - (i % 2 == 0 ? 0.55f : 0.42f));
+                var rot = props[i] is Katana
+                    ? Quaternion.LookRotation(Vector3.up, dir)        // blade up, handle at the bottom
+                    : props[i] is Gun ? Quaternion.LookRotation(dir) : Quaternion.identity;
+                if (props[i] is Katana) pos += Vector3.down * 0.2f;
+                props[i].transform.SetPositionAndRotation(pos, rot);
+                props[i].SetHovering(true);
+            }
+            _lobbed.Clear();
 
             _nextShot = Time.time + TurretInterval;
             TimeController.Instance.ResetTracking();
@@ -217,6 +253,38 @@ namespace Stopklatka
             var face = Quaternion.LookRotation(Vector3.ProjectOnPlane(_origin - pos, Vector3.up), Vector3.up);
             _enemy = Factory.CreateEnemy(pos, face, 1, GunKind.Pistol);
             _enemyUp = true;
+        }
+
+        /// <summary>
+        /// X button: a pistol flies in an arc from ahead of you toward your right hand. It moves in
+        /// game time, so in slow motion you have plenty of time to hold the grip and catch it.
+        /// </summary>
+        void LobPistol()
+        {
+            var rig = PlayerRig.Instance;
+            var hand = rig.RightController.position;
+            var start = new Vector3(_origin.x, 0f, _origin.z) + _forward * LobDistance + _right * 0.4f;
+            start.y = Mathf.Max(0.9f, hand.y - 0.2f);
+            float t = Mathf.Max(0.3f, LobFlightTime);
+            // ballistic: start + v t + g t^2 / 2 = hand
+            var v = (hand - start) / t - 0.5f * Physics.gravity * t;
+
+            var gun = Factory.CreateGun(GunKind.Pistol, start, Quaternion.LookRotation(-_forward));
+            gun.Body.linearVelocity = v;
+            gun.Body.angularVelocity = _right * 3f;
+            _lobbed.Add(gun);
+            _lobs++;
+            SoundBank.Instance?.Play(Sfx.Swing, start, 0.6f, 0.8f);
+
+            // keep the floor tidy: only the last few lobbed pistols stay
+            for (int i = _lobbed.Count - 1; i >= 0; i--)
+                if (_lobbed[i] == null) _lobbed.RemoveAt(i);
+            while (_lobbed.Count > MaxLobbed)
+            {
+                var old = _lobbed[0];
+                _lobbed.RemoveAt(0);
+                if (old != null && old.Holder == null) Destroy(old.gameObject);
+            }
         }
 
         void OnHit(Vector3 point)

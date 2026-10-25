@@ -2,22 +2,62 @@ using UnityEngine;
 
 namespace Stopklatka
 {
-    public enum GunKind { Pistol, Shotgun }
+    public enum GunKind { Pistol, Shotgun, Smg }
 
-    /// <summary>Pistol (4 rounds) or shotgun (2 shells, 6 pellets). Empty guns are still good for throwing.</summary>
+    /// <summary>
+    /// Pistol (4 rounds), shotgun (2 shells, 6 pellets) or SMG (short bursts, 15 rounds). No reload:
+    /// an empty gun clicks (sound plus a double haptic tick on every pull) and is still good for
+    /// throwing. All numbers are in GameConfig > weapons; cooldowns and burst timing run in game time.
+    /// </summary>
     public class Gun : Grabbable
     {
         public GunKind Kind;
         public Transform Muzzle;
         public int Ammo;
 
-        float _nextShot;    // game time
+        float _nextShot;            // game time
+        int _burstLeft;
+        float _nextRound;           // game time
+        ControllerHand _burstHand;
 
-        public int MaxAmmo => Kind == GunKind.Shotgun ? 2 : 4;
-        int Pellets => Kind == GunKind.Shotgun ? 6 : 1;
-        float SpreadDegrees => Kind == GunKind.Shotgun ? 5.5f : 0.25f;
-        float Cooldown => Kind == GunKind.Shotgun ? 0.9f : 0.3f;
-        Sfx Sound => Kind == GunKind.Shotgun ? Sfx.Shotgun : Sfx.Pistol;
+        static WeaponSettings W => GameConfig.Instance.weapons;
+
+        public int MaxAmmo => Kind switch
+        {
+            GunKind.Shotgun => W.shotgunShells,
+            GunKind.Smg => W.smgRounds,
+            _ => W.pistolRounds,
+        };
+
+        int Pellets => Kind == GunKind.Shotgun ? Mathf.Max(1, W.shotgunPellets) : 1;
+
+        float SpreadDegrees => Kind switch
+        {
+            GunKind.Shotgun => W.shotgunSpread,
+            GunKind.Smg => W.smgSpread,
+            _ => W.pistolSpread,
+        };
+
+        float Cooldown => Kind switch
+        {
+            GunKind.Shotgun => W.shotgunCooldown,
+            GunKind.Smg => W.smgBurstCooldown,
+            _ => W.pistolCooldown,
+        };
+
+        Sfx Sound => Kind switch
+        {
+            GunKind.Shotgun => Sfx.Shotgun,
+            GunKind.Smg => Sfx.Smg,
+            _ => Sfx.Pistol,
+        };
+
+        HapticPulse ShotHaptic => Kind switch
+        {
+            GunKind.Shotgun => GameConfig.Instance.haptics.shotgunShot,
+            GunKind.Smg => GameConfig.Instance.haptics.smgRound,
+            _ => GameConfig.Instance.haptics.pistolShot,
+        };
 
         protected override void Awake()
         {
@@ -27,24 +67,67 @@ namespace Stopklatka
 
         public override void OnTriggerDown(ControllerHand hand)
         {
-            if (Time.time < _nextShot) return;
             if (Ammo <= 0)
             {
-                SoundBank.Instance?.Play(Sfx.Empty, Muzzle.position, 0.7f, 1f, false);
-                hand.Haptic(0.15f, 0.04f);
+                // every pull on an empty gun clicks, even right after the last shot
+                var h = GameConfig.Instance.haptics;
+                SoundBank.Instance?.Play(Sfx.Empty, Muzzle.position, 0.8f, 1f, false);
+                hand.HapticTicks(h.emptyClick, h.emptyClickTicks, h.emptyClickGap);
                 return;
             }
+            if (_burstLeft > 0 || Time.time < _nextShot) return;
+
+            if (Kind == GunKind.Smg)
+            {
+                // the burst continues in Update, one round every smgRoundInterval of game time
+                _burstLeft = Mathf.Clamp(W.smgRoundsPerBurst, 1, Ammo);
+                _burstHand = hand;
+                _nextRound = Time.time;
+                FireRound(hand);
+            }
+            else
+            {
+                FireRound(hand);
+                _nextShot = Time.time + Cooldown;
+            }
+            TimeController.Instance?.ActionPulse();   // one pulse per shot or burst
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+            if (_burstLeft <= 0) return;
+            if (Holder == null || Holder != _burstHand || Ammo <= 0)
+            {
+                EndBurst();   // dropped or thrown mid-burst
+                return;
+            }
+            if (Time.time >= _nextRound) FireRound(_burstHand);
+        }
+
+        void FireRound(ControllerHand hand)
+        {
             Ammo--;
-            _nextShot = Time.time + Cooldown;
             for (int i = 0; i < Pellets; i++)
                 BulletSystem.Fire(Muzzle.position, Spread(Muzzle.forward, SpreadDegrees) * Tuning.PlayerBulletSpeed, BulletOwner.Player, null);
             Effects.MuzzleFlash(Muzzle.position, Muzzle.rotation);
             SoundBank.Instance?.Play(Sound, Muzzle.position, 1f, Random.Range(0.95f, 1.05f));
-            hand.Haptic(Kind == GunKind.Shotgun ? 1f : 0.75f, Kind == GunKind.Shotgun ? 0.18f : 0.1f);
-            TimeController.Instance?.ActionPulse();
+            hand.Haptic(ShotHaptic);
+
+            if (Kind != GunKind.Smg) return;
+            _burstLeft--;
+            _nextRound += Mathf.Max(0.01f, W.smgRoundInterval);
+            if (_burstLeft <= 0 || Ammo <= 0) EndBurst();
         }
 
-        /// <summary>Enemies have unlimited ammo but slower bullets and a wobbly aim.</summary>
+        void EndBurst()
+        {
+            _burstLeft = 0;
+            _burstHand = null;
+            _nextShot = Time.time + Cooldown;
+        }
+
+        /// <summary>Enemies have unlimited ammo but slower bullets and a wobbly aim. (Enemy SMG bursts: stage 4.)</summary>
         public void FireAsEnemy(Enemy shooter, Vector3 target, float inaccuracyDegrees)
         {
             var dir = (target - Muzzle.position).normalized;
