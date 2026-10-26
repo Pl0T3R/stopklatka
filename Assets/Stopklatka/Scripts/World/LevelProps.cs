@@ -66,6 +66,7 @@ namespace Stopklatka
         /// </summary>
         public void Build(int level, PropTheme theme)
         {
+            using var perfScope = PerfMarkers.Props.Auto();
             ClearNow();
             BuiltLevel = level;
             var cfg = Tuning.Props;
@@ -431,6 +432,8 @@ namespace Stopklatka
                 _floorLight = new Material(Mats.Get(Mats.FloorLight)) { name = "FloorLight (level)" };
                 _windowColor = _window.GetColor(BaseColorId);
                 _floorLightColor = _floorLight.GetColor(BaseColorId);
+                // copies keep the source's instancing switch; make sure, so the props can be drawn in groups
+                foreach (var m in new[] { _white, _statue, _whiteReveal, _statueReveal, _window, _floorLight }) m.enableInstancing = true;
             }
             var cfg = Tuning.Props;
             foreach (var m in new[] { _white, _statue, _whiteReveal, _statueReveal })

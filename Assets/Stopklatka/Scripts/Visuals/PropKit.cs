@@ -236,6 +236,8 @@ namespace Stopklatka
         {
             var part = MeshKit.Part("Mesh", root.transform, mesh, mat);
             part.layer = root.layer;
+            // all plinths (and so on) of a level in one instanced draw (InstanceDrawer)
+            InstancedPart.Attach(part, InstanceGroup.Props);
             if (root.layer == Layers.Room && root.GetComponent<Collider>() == null) AddCollider(root, mesh);
         }
 

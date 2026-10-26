@@ -35,6 +35,7 @@ namespace Stopklatka
         /// <summary>Breaks the body into chunks and shards from a hit at point along dir.</summary>
         public static void Break(EnemyBody body, Vector3 point, Vector3 dir, float floorY)
         {
+            using var perfScope = PerfMarkers.Shatter.Auto();
             var cfg = Tuning.Shatter;
             dir = SafeDir(dir, body.transform.forward);
             var pieces = body.Pieces;
@@ -103,6 +104,7 @@ namespace Stopklatka
         /// </summary>
         public static bool Cut(EnemyBody body, Vector3 point, Vector3 normal, Vector3 swingDir, float floorY)
         {
+            using var perfScope = PerfMarkers.Shatter.Auto();
             var cfg = Tuning.Shatter;
             var pieces = body.Pieces;
             int count = Mathf.Min(pieces.Length, MaxParts);

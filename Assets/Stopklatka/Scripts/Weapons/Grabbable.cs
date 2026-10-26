@@ -31,6 +31,9 @@ namespace Stopklatka
         public float ReleasedAt { get; private set; } = -10f;
 
         Collider[] _colliders;
+        Renderer[] _renderers;
+        /// <summary>Instanced-draw markers of the meshes (suspended while a hand holds the item).</summary>
+        InstancedPart[] _instanced;
         readonly Collider[] _ignored = new Collider[4];
         int _ignoredCount;
         float _restoreCollisionsAt;
@@ -45,6 +48,31 @@ namespace Stopklatka
             Body.interpolation = RigidbodyInterpolation.None;
             foreach (var t in GetComponentsInChildren<Transform>(true)) t.gameObject.layer = Layers.Grabbable;
             _colliders = GetComponentsInChildren<Collider>(true);
+            _renderers = GetComponentsInChildren<Renderer>(true);
+            _instanced = GetComponentsInChildren<InstancedPart>(true);
+        }
+
+        /// <summary>
+        /// Like new (a pooled gun coming back, see <see cref="GunPool"/>): no holder or enemy, not
+        /// hovering, not thrown, collisions with everything restored, visible, at rest, unparented.
+        /// </summary>
+        public virtual void ResetForReuse()
+        {
+            if (Holder != null) Holder.ForceDrop();
+            Holder = null;
+            EnemyOwner = null;
+            Hovering = false;
+            ReleasedAt = -10f;
+            _thrownUntil = 0f;
+            _lastThud = 0f;
+            RestoreCollisions();
+            if (transform.parent != null) transform.SetParent(null, true);
+            InstancedPart.SetSuspended(_instanced, false);
+            foreach (var r in _renderers) if (r != null) r.enabled = true;
+            // dynamic first: a kinematic body's velocity can't be set
+            Body.isKinematic = false;
+            Body.linearVelocity = Vector3.zero;
+            Body.angularVelocity = Vector3.zero;
         }
 
         protected virtual void OnEnable() => All.Add(this);
@@ -106,6 +134,8 @@ namespace Stopklatka
             Hovering = false;
             Body.isKinematic = true;
             _thrownUntil = 0f;
+            // in the hand it follows the controller right before rendering: its own renderers draw it
+            InstancedPart.SetSuspended(_instanced, true);
         }
 
         public void FollowHand(Transform anchor)
@@ -116,6 +146,7 @@ namespace Stopklatka
         public virtual void OnRelease(Vector3 velocity, Vector3 angularVelocity)
         {
             Holder = null;
+            InstancedPart.SetSuspended(_instanced, false);
             ReleasedAt = Time.unscaledTime;
             Body.isKinematic = false;
             Body.linearVelocity = velocity;

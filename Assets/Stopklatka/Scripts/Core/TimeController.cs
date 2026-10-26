@@ -68,6 +68,8 @@ namespace Stopklatka
         {
             Instance = this;
             Time.fixedDeltaTime = Tuning.BasePhysicsStep;
+            // after a long hitch, catch up at most this much game time (so physics doesn't run many steps at once)
+            Time.maximumDeltaTime = Mathf.Clamp(GameConfig.Instance.performance.maxDeltaTime, 0.02f, 0.3333f);
         }
 
         public void SetMode(Mode mode, float fixedScale = 1f)
@@ -93,6 +95,7 @@ namespace Stopklatka
 
         void Update()
         {
+            using var perfScope = PerfMarkers.TimeSystem.Auto();
             var c = GameConfig.Instance.time;
             float dt = Mathf.Max(Time.unscaledDeltaTime, 1e-4f);
             Motion = MeasureMotion(c, dt);

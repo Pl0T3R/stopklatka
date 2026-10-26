@@ -198,6 +198,35 @@ Po każdym etapie:
     - [~] Pomieszczenia: białe bryły (postumenty, posągi, auta, lada, kolumny, latarnie, barierki, gzymsy, ramy wind) i światło z okien są, ale tylko tam, gdzie pozwala skan (meble i wolne ściany), więc układ zależy od twojego pokoju. Brak płyt z fugą na podłodze (świadomie: wirtualna podłoga zasłoniłaby prawdziwe przeszkody) i brak prawdziwych otworów okiennych.
   - **Odbiega / do sprawdzenia na goglach:** rozmiary napisów TMP (font size 1 = 0,1 m) i sześcianów to szacunki; posągi i auta są małe na małych meblach; rekwizyty na meblach zasłaniają to, co leży na meblu albo pod stołem (w obrysie, przez który i tak nie przejdziesz); ramy wind i półkolumny nie są w NavMesh (do 18 cm od ściany, agent i tak trzyma 25 cm).
 
+- **Etap 7: gotowy na papierze (kompilacja testowa: 0 błędów, 0 ostrzeżeń; niezmierzony na goglach).** `unity-dev`. Wygląd i rozgrywka bez zmian; każda zmiana zachowania ma przełącznik w `GameConfig.performance`.
+  - **Audyt budżetu z prawdziwymi liczbami.** Trójkąty policzone z prawdziwych siatek: każdy `MeshKit.Builder` uruchomiony w osobnym programie na bibliotekach Unity (zaślepione metody natywne, `ToMesh` wypisuje liczbę trójkątów). Przeciwnik 452 + cień 72, pistolet 60, strzelba 100, pistolet maszynowy 84, katana 59, pocisk 24 + smuga 20, odłamki 4 / 8 / 20 (średnio 9), przełom 21, posąg 452, auto 176, postument 36, barierka 108–216 (pełna tabela w `CLAUDE.md`, „Performance”).
+  - **Najgorszy przypadek w kadrze** (6 przeciwników, w tym 2 w trakcie pojawiania się, 48 pocisków, rozpad kilku naraz z pełnymi odłamkami i kawałkami, 20 przedmiotów na podłodze, rekwizyty GALERII, napisy):
+
+    | Element | Draw calle przed | Draw calle teraz | Trójkąty |
+    | --- | --- | --- | --- |
+    | Przeciwnicy (6) | 72 | 30 (8 grup + 11 na każdego pojawiającego się) | 3 144 |
+    | Broń i przedmioty luzem (26) | 28 | 10 | 2 600 |
+    | W rękach / pięści | 3 | 3 | 300 |
+    | Pociski (48) | 96 | 3 | 2 112 |
+    | Odłamki (320) | 320 | 32 (56 przy 7 materiałach) | 2 880 (maks. 6 400) |
+    | Kawałki i przełomy (72) | 72 | 8 | maks. 6 048 |
+    | Pęknięcia (40) | 40 | 2 | 840 |
+    | Błyski (16) | 16 | 2 | 320 |
+    | Pierścienie spawnu | 2–6 | 2–6 | 400–1 200 |
+    | Rekwizyty GALERII (24) | 24 | 8 | 3 304 |
+    | Napisy, winieta, Depth API, debug | 14 | 14 | ~1 000 |
+    | **Razem** | **≈ 690** | **≈ 108, najgorzej 142** (budżet 150) | **≈ 27 tys.** (budżet 150 tys.) |
+
+  - **Decyzja: rysowanie instancjonowane** (`Visuals/InstanceDrawer.cs`, `InstancedPart.cs`). Odłamki, pociski, kawałki, przełomy, pęknięcia, błyski, ciała i cienie przeciwników, przedmioty luzem i rekwizyty: jedno `Graphics.RenderMeshInstanced` na siatkę i materiał, w `LateUpdate` po całej logice; ich renderery wyłączone przez `forceRenderingOff` (zostają włączone, więc `Renderer.bounds` dalej działa w kodzie rozpadu). Symulacja bez zmian. **Bez instancjonowania:** to, co trzymasz, i pięść (OVRCameraRig przesuwa je jeszcze w `onBeforeRender`, kopia instancjonowana spóźniałaby się o klatkę), przeciwnik w trakcie pojawiania się (wysokość odsłonięcia na rendererze), pierścienie spawnu, winieta, napisy. Przełącznik `performance.instancedRendering` plus cztery grupy. **Shadery bez zmian** (już miały `multi_compile_instancing` i makra stereo; builder już włączał instancing w materiałach).
+  - **Pooling:** przeciwnicy i ich broń (`EnemyPool`, `GunPool`, `performance.poolEnemies`; 6 przeciwników i po 2 sztuki każdej broni budowane podczas wczytywania skanu). `Enemy.Init` zeruje cały stan (stan, celowanie, seria, gardę, cios, odsłonięcie, kolidery, NavMeshAgent), `EnemyBody.ResetPose` pozę, `Gun.ResetForReuse` amunicję, właściciela, ignorowane kolizje i widoczność. Pęknięcia na ciele znikają przy powrocie do puli. Bez poolingu (świadomie): rekwizyty, sześciany menu, znajdźki i napisy (raz na poziom albo menu, nigdy w walce).
+  - **CPU:** brak alokacji w pętli walki (sortowanie trafień pocisku przez wstawianie, tekst odczytu budowany dwa razy na sekundę, zmienna podłogi w shaderze tylko przy zmianie, katana bez drugiego szukania komponentu). Znaczniki profilera `Stopklatka.*` (`Core/PerfMarkers.cs`). Więcej par warstw bez kolizji (przeciwnik–pokój, przeciwnik–przeciwnik, gracz–pokój i inne, które nigdy nie potrzebują kontaktu). `Time.maximumDeltaTime` 0,1 s. Fizyka: jeden krok na klatkę przy każdym tempie czasu (sprawdzone w `TimeController`: `fixedDeltaTime` i `timeScale` ustawiane razem).
+  - **Rozgrzewka shaderów** (`Visuals/PipelineWarmup.cs`): podczas wczytywania każdy materiał rysowany niewidocznie (skala 1e-6), zwykle i instancjonowanie, drugi raz po włączeniu okluzji Depth API; ukryty napis ze wszystkimi polskimi literami. Warianty: Crystal ± `_REVEAL` × zwykły / `INSTANCING_ON` × okluzja (brak / HARD), Transparent × zwykły / instancjonowany, Text, TMP z cieniem.
+  - **Ustawienia buildu i XR** (builder, `ConfigurePerformance`, `ConfigureOpenXR`, `ConfigureUrp`): graphics jobs (Legacy), wielowątkowe renderowanie, 32-bitowy bufor, bez Android frame pacing, `Debug.Log` bez stosu, vSync 0, 1 światło pikselowe, fizyka bez auto sync, DSP „Good latency”, URP bez świateł dodatkowych i bez dynamic batching, renderer Forward bez depth priming, SSAO / Decals wyłączone, OpenXR Multi-view, symmetric projection, optimize buffer discards, Subsampled Layout. Pełna tabela stara → nowa wartość w `CLAUDE.md`. Stripping zostaje Minimal (SDK Mety i MRUK używają refleksji).
+  - **Dynamiczna rozdzielczość:** sprawdzone w źródłach SDK 207: OVRManager z OpenXR co klatkę ustawia `renderViewportScale` z zalecanej rozdzielczości runtime'u; wymaga Unity ≥ 6000.0.25f1. **Decyzja:** zapas w `PerformanceManager` (`resolutionFallback` Auto: tylko gdy ścieżka OVRManagera nie działa; schodzi o 0,05 po 1,5 s gubionych klatek, wraca po 8 s; „klatki ważniejsze od rozdzielczości”). Opcjonalnie (domyślnie wyłączone) zejście do 72 Hz, gdy klatki dalej giną przy najniższej rozdzielczości; powrót w menu; każda zmiana w logu.
+  - **Odczyt** (lewa gałka): FPS, średni i najgorszy czas klatki, Hz, rozdzielczość i skala, draw calle, SetPass, trójkąty, GC na klatkę, czas wątku głównego, liczba grup instancjonowanych, znaczniki. Liczniki renderowania, GC i znaczniki tylko w Development Build (inaczej „–”).
+  - **Do zmierzenia na goglach** (lista kroków w `CLAUDE.md`, „Performance”): menu jako punkt odniesienia; 3 poziomy w szkole i w domu (90 fps, p95 < 11,1 ms); test obciążenia (fale bez końca, 6 przeciwników, 3 zabicia naraz) z instancjonowaniem i bez; ślad Perfetto 10 s; zachowanie dynamicznej rozdzielczości; opcja 120 Hz; 15 minut gry (temperatura).
+  - **Ryzyka:** przezroczyste grupy (smugi, przełomy) sortowane jako całość, nie każdy obiekt osobno; poprawność stanu przeciwników z puli; symmetric projection a krawędzie okluzji Depth API; zmiana skali przez zapas realokuje bufory oczu (krótkie przycięcie, dlatego rzadko).
+
 **Budżety wydajności (90 Hz, czyli 11,1 ms na klatkę):**
 - do 150 draw calli,
 - do 150 tys. trójkątów w kadrze,
@@ -205,6 +234,7 @@ Po każdym etapie:
 - odłamki do 320, pociski do 48,
 - jedno światło (brak cieni czasu rzeczywistego, cień pod przeciwnikiem to krążek),
 - passthrough i Depth API wliczone w koszt.
+- Stan po etapie 7 (na papierze): najgorzej 142 draw calle i około 27 tys. trójkątów (tabela w „Etap 7”).
 
 ## Ograniczenia i ryzyka
 - **Bez Unity w chmurze.** Shadery, sceny z buildera, AudioMixer i import TMP sprawdzi dopiero Unity na komputerze właściciela. Lista kontrolna jest w `CLAUDE.md`.

@@ -148,6 +148,7 @@ namespace Stopklatka
 
         void Update()
         {
+            using var perfScope = PerfMarkers.Levels.Auto();
             if (Current != Phase.Fighting) return;
             var gm = GameManager.Instance;
             if (gm != null && gm.Paused) return;

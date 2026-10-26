@@ -101,8 +101,11 @@ namespace Stopklatka
 
         static readonly int FloorYId = Shader.PropertyToID("_StopklatkaFloorY");
 
+        float _sentFloorY = float.NaN;
+
         void Update()
         {
+            using var perfScope = PerfMarkers.Room.Auto();
             // Houses have floors: follow the floor height of the room you are in.
             if (HasScan && MRUK.Instance != null) UpdateFloor(MRUK.Instance.GetCurrentRoom());
         }
@@ -113,6 +116,9 @@ namespace Stopklatka
             if (floor == null || PlayerRig.Instance == null) return;
             float y = floor.transform.position.y;
             PlayerRig.Instance.FloorY = y;
+            // the shader global only when it changes (another storey, a world-lock correction)
+            if (y == _sentFloorY) return;
+            _sentFloorY = y;
             Shader.SetGlobalFloat(FloorYId, y);
         }
 

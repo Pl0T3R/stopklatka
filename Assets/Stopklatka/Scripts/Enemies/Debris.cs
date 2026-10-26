@@ -53,6 +53,7 @@ namespace Stopklatka
 
         void Update()
         {
+            using var perfScope = PerfMarkers.Debris.Auto();
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
             _age += dt;
@@ -216,6 +217,7 @@ namespace Stopklatka
         static DebrisPiece CreatePiece()
         {
             var go = MeshKit.Part("Debris Piece", null, null, Mats.Get(Mats.Enemy));
+            InstancedPart.Attach(go, InstanceGroup.Effects);   // chunks and caps drawn in groups (InstanceDrawer)
             var piece = go.AddComponent<DebrisPiece>();
             piece.Setup(go.GetComponent<MeshFilter>(), go.GetComponent<MeshRenderer>());
             return piece;

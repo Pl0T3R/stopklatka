@@ -594,6 +594,17 @@ namespace Stopklatka
         [Range(-80f, 10f)] public float ambientDb = 0f;
     }
 
+    /// <summary>When PerformanceManager scales the resolution itself (stage 7).</summary>
+    public enum ResolutionFallbackMode
+    {
+        /// <summary>Never: only OVRManager's dynamic resolution.</summary>
+        Off,
+        /// <summary>Only when OVRManager's dynamic resolution is unavailable on this device or build.</summary>
+        Auto,
+        /// <summary>Always (turns OVRManager's dynamic resolution off). For testing.</summary>
+        Force,
+    }
+
     [Serializable]
     public class PerformanceSettings
     {
@@ -601,6 +612,56 @@ namespace Stopklatka
         public float targetRefreshRate = 90f;
         public OVRManager.FoveatedRenderingLevel foveation = OVRManager.FoveatedRenderingLevel.High;
         public bool dynamicFoveation = true;
+
+        [Header("Instanced rendering (stage 7)")]
+        [Tooltip("Draw crowds of identical meshes (shards, bullets, debris, enemies, loose items, props) with one instanced draw call per mesh and material. Off: one renderer per object, as before.")]
+        public bool instancedRendering = true;
+        [Tooltip("Shards, bullets and their streaks, debris chunks, glowing caps, cracks and flashes.")]
+        public bool instanceEffects = true;
+        [Tooltip("Enemy bodies and floor shadows (not while they form: the reveal uses its own material per enemy).")]
+        public bool instanceEnemies = true;
+        [Tooltip("Weapons and throwables that are not in your hands (lying around, flying, held by enemies).")]
+        public bool instanceItems = true;
+        [Tooltip("The white level props (plinths, statues, cars, columns, light panels).")]
+        public bool instanceProps = true;
+
+        [Header("Pooling (stage 7)")]
+        [Tooltip("Reuse enemies and guns instead of creating and destroying them (a spawn built about 25 objects and a NavMeshAgent).")]
+        public bool poolEnemies = true;
+        [Tooltip("Enemies built while the scan loads, so the first wave creates nothing.")]
+        public int prewarmEnemies = 6;
+        [Tooltip("Guns of each kind (pistol, shotgun, SMG) built while the scan loads.")]
+        public int prewarmGunsPerKind = 2;
+
+        [Header("Warm-up (stage 7)")]
+        [Tooltip("While the scan loads, draw every game material once, invisibly small in front of you (plain and instanced), and lay out all text characters, so the first kill, reveal or title doesn't stall on shader or font setup.")]
+        public bool warmUpShaders = true;
+        [Tooltip("Frames to keep drawing the warm-up meshes.")]
+        public int warmUpFrames = 3;
+
+        [Header("Frame time")]
+        [Tooltip("Longest game step per frame (s, Time.maximumDeltaTime). After a long hitch the game catches up at most this much at once, so physics doesn't run many steps in one frame. Unity's default is 0.333.")]
+        public float maxDeltaTime = 0.1f;
+
+        [Header("Resolution fallback (frame rate wins over resolution)")]
+        [Tooltip("Auto: only if OVRManager's dynamic resolution can't work here (it then lowers the render scale itself when frames are missed and raises it back slowly). Off: never. Force: always, for testing.")]
+        public ResolutionFallbackMode resolutionFallback = ResolutionFallbackMode.Auto;
+        [Tooltip("Render scale range of the fallback (1.0 = 1680 px wide per eye, 1.205 = about 2024 px).")]
+        public float fallbackMinScale = 1f, fallbackMaxScale = 1.205f;
+        [Tooltip("Render scale change per step. Every change reallocates the eye textures, so steps are rare.")]
+        public float fallbackStep = 0.05f;
+        [Tooltip("Real seconds with missed frames before the scale goes down one step.")]
+        public float fallbackDownAfter = 1.5f;
+        [Tooltip("Real seconds without a missed frame before the scale goes up one step (doubles after a step up that had to be undone).")]
+        public float fallbackUpAfter = 8f;
+        [Tooltip("A half-second window counts as missing frames when its average frame time is above the display budget times this.")]
+        public float overBudgetFactor = 1.08f;
+
+        [Header("Refresh rate step-down (off by default)")]
+        [Tooltip("If frames are still missed for stepDownAfter seconds at the lowest resolution, switch the display to stepDownRate (GAME_SPEC: 72 Hz minimum). Restored when you return to the menu. Every change is logged.")]
+        public bool allowRefreshStepDown;
+        public float stepDownAfter = 5f;
+        public float stepDownRate = 72f;
     }
 
     [Serializable]
@@ -610,6 +671,10 @@ namespace Stopklatka
         public bool wristTimeIndicator;
         [Tooltip("FPS readout at start (left thumbstick click toggles it anyway).")]
         public bool performanceReadout;
+        [Tooltip("Real seconds between updates of the readout text (it is rebuilt, not every frame).")]
+        public float readoutInterval = 0.5f;
+        [Tooltip("The readout also lists the game's own profiler markers (development builds only).")]
+        public bool readoutMarkers = true;
         [Tooltip("Editor only (never in a build): when the device gives no scan, load this MRUK sample room so levels and props can be checked in Play mode. Empty = off.")]
         public string editorSampleRoom = "Packages/com.meta.xr.mrutilitykit/Core/Rooms/Prefabs/LivingRoom/LivingRoom00.prefab";
     }

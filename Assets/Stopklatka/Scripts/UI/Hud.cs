@@ -138,6 +138,7 @@ namespace Stopklatka
 
         void LateUpdate()
         {
+            using var perfScope = PerfMarkers.Hud.Auto();
             var rig = PlayerRig.Instance;
             if (rig == null) return;
             float now = Time.unscaledTime;

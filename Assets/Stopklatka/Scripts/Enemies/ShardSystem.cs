@@ -27,6 +27,7 @@ namespace Stopklatka
 
         void Update()
         {
+            using var perfScope = PerfMarkers.Shards.Auto();
             float left = _dieAt - Time.time;
             if (left <= 0f) { ShardSystem.Release(this); return; }
             if (left < 0.6f) transform.localScale = Vector3.one * (_size * left / 0.6f);
@@ -145,6 +146,7 @@ namespace Stopklatka
             rb.mass = 0.05f;
             rb.linearDamping = 0.05f;
             rb.angularDamping = 0.2f;
+            InstancedPart.Attach(go, InstanceGroup.Effects);   // drawn in groups (InstanceDrawer)
             var shard = go.AddComponent<Shard>();
             shard.Setup(rb, r);
             return shard;

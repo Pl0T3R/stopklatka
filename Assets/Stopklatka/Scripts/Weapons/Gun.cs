@@ -65,6 +65,17 @@ namespace Stopklatka
             Ammo = MaxAmmo;
         }
 
+        /// <summary>A pooled gun coming back (<see cref="GunPool"/>): full, no burst, no cooldown.</summary>
+        public override void ResetForReuse()
+        {
+            base.ResetForReuse();
+            Ammo = MaxAmmo;
+            _nextShot = 0f;
+            _burstLeft = 0;
+            _nextRound = 0f;
+            _burstHand = null;
+        }
+
         public override void OnTriggerDown(ControllerHand hand)
         {
             if (Ammo <= 0)

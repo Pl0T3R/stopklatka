@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using Object = UnityEngine.Object;
 using UnityEngine.AI;
 
 namespace Stopklatka
@@ -30,9 +31,29 @@ namespace Stopklatka
             rotation = Quaternion.Euler(FistEuler.x, FistEuler.y * m, FistEuler.z * m);
         }
 
+        /// <summary>
+        /// An enemy at this pose, starting to form, with an optional gun. Pooled enemies and guns are
+        /// reused (GameConfig performance.poolEnemies); otherwise they are built here.
+        /// </summary>
         public static Enemy CreateEnemy(Vector3 position, Quaternion rotation, int wave, GunKind? gun)
         {
+            using var perfScope = PerfMarkers.Spawn.Auto();
+            var enemy = EnemyPool.Get(position, rotation);
+            Gun weapon = gun.HasValue ? CreateGun(gun.Value, position, rotation) : null;
+            var rooms = RoomService.Instance;
+            enemy.Init(weapon, wave, rooms != null ? rooms.NavAgentTypeId : 0, rooms != null && rooms.NavReady);
+            return enemy;
+        }
+
+        /// <summary>
+        /// Builds a new enemy, inactive (the caller places and activates it): the body, its colliders,
+        /// a kinematic body and a NavMeshAgent (off until Enemy.Init puts it on the NavMesh).
+        /// </summary>
+        public static Enemy BuildEnemy(Vector3 position, Quaternion rotation)
+        {
             var root = new GameObject("Enemy") { layer = Layers.Enemy };
+            // inactive while it is put together, so the agent isn't created off the NavMesh
+            root.SetActive(false);
             root.transform.SetPositionAndRotation(position, rotation);
 
             // body capsule (broad shoulders: a bit wider than the waist) and the long head
@@ -62,20 +83,48 @@ namespace Stopklatka
             var body = EnemyBody.Build(root.transform, Mats.Get(Mats.Enemy), Mats.Get(Mats.FloorShadow));
             foreach (var t in root.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = Layers.Enemy;
 
-            Gun weapon = gun.HasValue ? CreateGun(gun.Value, position, rotation) : null;
             var enemy = root.AddComponent<Enemy>();
-            var rooms = RoomService.Instance;
-            enemy.Init(body, agent, weapon, wave, rooms != null ? rooms.NavAgentTypeId : 0, rooms != null && rooms.NavReady);
+            enemy.Setup(body, agent);
             return enemy;
         }
 
+        /// <summary>
+        /// Builds the enemy and gun pools while loading (GameConfig performance.prewarmEnemies and
+        /// prewarmGunsPerKind), so spawning in a fight only reuses objects.
+        /// </summary>
+        public static void PrewarmPools()
+        {
+            var perf = GameConfig.Instance.performance;
+            EnemyPool.Prewarm(perf.prewarmEnemies);
+            GunPool.Prewarm(perf.prewarmGunsPerKind);
+        }
+
+        /// <summary>A gun of this kind: from the gun pool (GameConfig performance.poolEnemies) or new.</summary>
         public static Gun CreateGun(GunKind kind, Vector3 position, Quaternion rotation)
+        {
+            var pooled = GunPool.Get(kind, position, rotation);
+            return pooled != null ? pooled : BuildGun(kind, position, rotation);
+        }
+
+        /// <summary>
+        /// Removes a loose item (clearing the world, the time test's spare pistols): guns go back to
+        /// the gun pool, everything else is destroyed.
+        /// </summary>
+        public static void Recycle(Grabbable item)
+        {
+            if (item == null) return;
+            if (item is Gun gun && GunPool.Release(gun)) return;
+            Object.Destroy(item.gameObject);
+        }
+
+        /// <summary>Builds a new gun (pistol, shotgun or SMG), active and ready.</summary>
+        public static Gun BuildGun(GunKind kind, Vector3 position, Quaternion rotation)
         {
             EnsureMeshes();
             var go = new GameObject(kind.ToString());
             go.transform.SetPositionAndRotation(position, rotation);
             var mesh = kind switch { GunKind.Shotgun => _shotgun, GunKind.Smg => _smg, _ => _pistol };
-            MeshKit.Part("Mesh", go.transform, mesh, Mats.Get(Mats.Weapon));
+            Item(MeshKit.Part("Mesh", go.transform, mesh, Mats.Get(Mats.Weapon)));
 
             var col = go.AddComponent<BoxCollider>();
             switch (kind)
@@ -113,8 +162,8 @@ namespace Stopklatka
             EnsureMeshes();
             var go = new GameObject("Katana");
             go.transform.SetPositionAndRotation(position, rotation);
-            MeshKit.Part("Handle", go.transform, _katanaHandle, Mats.Get(Mats.Weapon));
-            MeshKit.Part("Blade", go.transform, _katanaBlade, Mats.Get(Mats.Blade));
+            Item(MeshKit.Part("Handle", go.transform, _katanaHandle, Mats.Get(Mats.Weapon)));
+            Item(MeshKit.Part("Blade", go.transform, _katanaBlade, Mats.Get(Mats.Blade)));
 
             var handle = go.AddComponent<BoxCollider>();
             handle.center = new Vector3(0f, 0f, 0.02f);
@@ -168,7 +217,7 @@ namespace Stopklatka
             {
                 case ThrowableKind.Bottle:
                 {
-                    MeshKit.Part("Mesh", go.transform, _bottle, Mats.Get(Mats.DarkGlass));
+                    Item(MeshKit.Part("Mesh", go.transform, _bottle, Mats.Get(Mats.DarkGlass)));
                     var col = go.AddComponent<CapsuleCollider>();
                     col.center = new Vector3(0f, 0.02f, 0f);
                     col.height = 0.28f;
@@ -180,7 +229,7 @@ namespace Stopklatka
                 }
                 case ThrowableKind.Mug:
                 {
-                    MeshKit.Part("Mesh", go.transform, _mug, Mats.Get(Mats.Weapon));
+                    Item(MeshKit.Part("Mesh", go.transform, _mug, Mats.Get(Mats.Weapon)));
                     var col = go.AddComponent<BoxCollider>();
                     col.center = new Vector3(0.012f, 0f, 0f);
                     col.size = new Vector3(0.104f, 0.096f, 0.08f);
@@ -189,7 +238,7 @@ namespace Stopklatka
                 }
                 case ThrowableKind.Ashtray:
                 {
-                    MeshKit.Part("Mesh", go.transform, _ashtray, Mats.Get(Mats.Weapon));
+                    Item(MeshKit.Part("Mesh", go.transform, _ashtray, Mats.Get(Mats.Weapon)));
                     var col = go.AddComponent<BoxCollider>();
                     col.size = new Vector3(0.135f, 0.03f, 0.135f);
                     rb.mass = 0.7f;
@@ -198,14 +247,14 @@ namespace Stopklatka
                 }
                 case ThrowableKind.Block:
                 {
-                    MeshKit.Part("Mesh", go.transform, _block, Mats.Get(Mats.Weapon));
+                    Item(MeshKit.Part("Mesh", go.transform, _block, Mats.Get(Mats.Weapon)));
                     go.AddComponent<BoxCollider>().size = Vector3.one * 0.085f;
                     rb.mass = 0.6f;
                     break;
                 }
                 default:
                 {
-                    MeshKit.Part("Mesh", go.transform, _ball, Mats.Get(Mats.Weapon));
+                    Item(MeshKit.Part("Mesh", go.transform, _ball, Mats.Get(Mats.Weapon)));
                     go.AddComponent<SphereCollider>().radius = 0.045f;
                     rb.mass = 0.4f;
                     rb.angularDamping = 0.4f;
@@ -218,6 +267,12 @@ namespace Stopklatka
             t.HoldEuler = holdEuler;
             return t;
         }
+
+        /// <summary>
+        /// Weapons and throwables are drawn in groups while nobody holds them (InstanceDrawer);
+        /// <see cref="Grabbable"/> suspends this while the item is in your hand.
+        /// </summary>
+        static void Item(GameObject part) => InstancedPart.Attach(part, InstanceGroup.Items);
 
         /// <summary>The player's black faceted fist (built palm down, knuckles along +Z), mirrored for the left hand.</summary>
         public static Mesh FistMesh(bool left)

@@ -52,8 +52,11 @@ namespace Stopklatka
                 _streakMesh = s.ToMesh("Bullet Streak", p => new Color(1f, 1f, 1f, Mathf.Clamp01((1f + p.z) / 0.6f)));
             }
             var go = new GameObject("Bullet");
-            MeshKit.Part("Slug", go.transform, _slugMesh, Mats.Get(Mats.Weapon));
+            var slug = MeshKit.Part("Slug", go.transform, _slugMesh, Mats.Get(Mats.Weapon));
             var streak = MeshKit.Part("Streak", go.transform, _streakMesh, Mats.Get(Mats.EnemyTrail));
+            // 48 bullets: one instanced draw for all slugs, one per streak color (InstanceDrawer)
+            InstancedPart.Attach(slug, InstanceGroup.Effects);
+            InstancedPart.Attach(streak, InstanceGroup.Effects);
             var bullet = go.AddComponent<Bullet>();
             bullet.Setup(streak.transform, streak.GetComponent<MeshRenderer>());
             return bullet;

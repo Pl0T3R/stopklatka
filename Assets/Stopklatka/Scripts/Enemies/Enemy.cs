@@ -48,11 +48,36 @@ namespace Stopklatka
         /// <summary>Height of the floor the enemy stands on (where its debris lands).</summary>
         float FloorY => transform.position.y;
 
-        public void Init(EnemyBody body, NavMeshAgent agent, Gun gun, int wave, int agentTypeId, bool navReady)
+        /// <summary>The body and agent this enemy drives (once, when it is built; a pooled enemy keeps them).</summary>
+        public void Setup(EnemyBody body, NavMeshAgent agent)
         {
             _body = body;
             _agent = agent;
             _colliders = GetComponents<Collider>();
+        }
+
+        /// <summary>
+        /// Starts the enemy where it stands: forming from the floor up, then walking, aiming or punching.
+        /// Resets everything, so a pooled enemy (see <see cref="EnemyPool"/>) starts exactly like a new one.
+        /// </summary>
+        public void Init(Gun gun, int wave, int agentTypeId, bool navReady)
+        {
+            // a fresh start (pooled enemies come back with whatever their last life left)
+            _aim = Aim.Idle;
+            _aimTime = 0f;
+            _repathAt = 0f;
+            _nextRound = 0f;
+            _guardUntil = -1f;
+            _burstLeft = 0;
+            _punchLanded = false;
+            _revealing = false;
+            _velocity = Vector3.zero;
+            _manualTarget = _burstTarget = _deathPoint = _deathDir = Vector3.zero;
+            _gunRenderers = null;
+            Gun = null;
+            _body.ResetPose();
+            foreach (var c in _colliders) if (c != null) c.enabled = true;
+
             _reactionTime = Tuning.ReactionTime(wave) * Random.Range(0.85f, 1.25f);
             _fireInterval = Tuning.FireInterval(wave);
             _reaction = _reactionTime;
@@ -61,7 +86,7 @@ namespace Stopklatka
             if (gun != null)
             {
                 Gun = gun;
-                gun.AttachToEnemy(this, body.HandSocketR);
+                gun.AttachToEnemy(this, _body.HandSocketR);
                 _gunRenderers = gun.GetComponentsInChildren<Renderer>();
                 SetGunVisible(false);
             }
@@ -77,6 +102,11 @@ namespace Stopklatka
                     transform.position = hit.position;
                     _agent.enabled = true;
                     _useAgent = _agent.Warp(hit.position) && _agent.isOnNavMesh;
+                    if (_useAgent)
+                    {
+                        _agent.ResetPath();
+                        _agent.isStopped = false;
+                    }
                 }
             }
             if (!_useAgent) _agent.enabled = false;
@@ -94,8 +124,12 @@ namespace Stopklatka
 
         void OnDestroy() => Alive.Remove(this);
 
+        // a pooled enemy is switched off instead of destroyed
+        void OnDisable() => Alive.Remove(this);
+
         void Update()
         {
+            using var perfScope = PerfMarkers.Enemies.Auto();
             float dt = Time.deltaTime;
             if (dt <= 0f || _state == State.Dead) return;
             _stateTime += dt;
@@ -109,7 +143,7 @@ namespace Stopklatka
                 {
                     _state = State.Dead;
                     Shatter.Break(_body, _deathPoint, _deathDir, FloorY);
-                    Destroy(gameObject);
+                    Retire();
                 }
                 return;
             }
@@ -468,7 +502,7 @@ namespace Stopklatka
                 return;
             }
             Shatter.Break(_body, point, direction, FloorY);
-            Destroy(gameObject);
+            Retire();
         }
 
         /// <summary>
@@ -480,7 +514,7 @@ namespace Stopklatka
             if (!BeginDeath(point, swingDir)) return;
             if (!Tuning.Shatter.katanaCutsInHalf || !Shatter.Cut(_body, point, planeNormal, swingDir, FloorY))
                 Shatter.Break(_body, point, swingDir, FloorY);
-            Destroy(gameObject);
+            Retire();
         }
 
         /// <summary>Everything every death does: stop, drop the gun, flash, sound, count the kill.</summary>
@@ -504,9 +538,25 @@ namespace Stopklatka
         public void Despawn()
         {
             _state = State.Dead;
-            if (Gun != null) Destroy(Gun.gameObject);
+            if (Gun != null) Factory.Recycle(Gun);   // its weapon goes too (back to the gun pool)
+            Gun = null;
             Alive.Remove(this);
-            Destroy(gameObject);
+            Retire();
+        }
+
+        /// <summary>Gone for good: back to the enemy pool (GameConfig performance.poolEnemies) or destroyed.</summary>
+        void Retire()
+        {
+            _state = State.Dead;
+            if (_agent != null && _agent.enabled) _agent.enabled = false;
+            if (_revealing)
+            {
+                // still forming: back to the shared material, so the pooled body starts clean
+                _revealing = false;
+                _body.EndReveal(Mats.Get(Mats.Enemy));
+            }
+            Alive.Remove(this);
+            if (!EnemyPool.Release(this)) Destroy(gameObject);
         }
     }
 }

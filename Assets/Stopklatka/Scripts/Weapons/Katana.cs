@@ -33,6 +33,7 @@ namespace Stopklatka
 
         protected override void Update()
         {
+            using var perfScope = PerfMarkers.Katana.Auto();
             base.Update();
             if (Holder == null) { _hasLast = false; return; }
 
@@ -69,6 +70,7 @@ namespace Stopklatka
                     SoundBank.Instance?.Play(Sfx.Slice, tip, 0.9f);
                     Holder.Haptic(GameConfig.Instance.haptics.katanaCut);
                 }
+                if (enemy != null) continue;   // an enemy is no menu target: skip the second lookup
                 var target = Hits[i].GetComponentInParent<MenuTarget>();
                 if (target != null) target.Activate(swingDir);
             }

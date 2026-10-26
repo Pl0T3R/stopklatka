@@ -63,6 +63,8 @@ namespace Stopklatka.EditorTools
             EditorUserBuildSettings.androidBuildSubtarget = MobileTextureSubtarget.ASTC;
             QualitySettings.shadows = ShadowQuality.Disable;
 
+            ConfigurePerformance();
+
             SetLayer(Layers.Room, "Room");
             SetLayer(Layers.Enemy, "Enemy");
             SetLayer(Layers.Grabbable, "Grabbable");
@@ -74,6 +76,136 @@ namespace Stopklatka.EditorTools
             ConfigureMetaFeatures();
             AssetDatabase.SaveAssets();
             Debug.Log("[Stopklatka] Project configured: Vulkan, IL2CPP ARM64, ASTC, URP tuned for 90/120 Hz, passthrough + scene + boundary features.");
+        }
+
+        /// <summary>
+        /// Stage 7: player, quality, physics and audio settings for a steady 90 Hz on Quest 3. Every value
+        /// matches (or is stricter than) Meta's Project Setup Tool recommendations, so Fix All doesn't
+        /// undo it. Old and new values are listed in CLAUDE.md ("Performance").
+        /// </summary>
+        static void ConfigurePerformance()
+        {
+            var android = NamedBuildTarget.Android;
+            // IL2CPP: fast code, release C++ compiler settings; stripping stays Minimal (SDKs use reflection)
+            PlayerSettings.SetIl2CppCodeGeneration(android, Il2CppCodeGeneration.OptimizeSpeed);
+            PlayerSettings.SetIl2CppCompilerConfiguration(android, Il2CppCompilerConfiguration.Release);
+            PlayerSettings.SetManagedStrippingLevel(android, ManagedStrippingLevel.Minimal);
+            // Meta recommendations: multithreaded rendering, legacy graphics jobs, 32-bit display buffer, instancing stereo path
+            PlayerSettings.MTRendering = true;
+            PlayerSettings.SetMobileMTRendering(android, true);
+            PlayerSettings.graphicsJobs = true;
+            PlayerSettings.graphicsJobMode = GraphicsJobMode.Legacy;
+            PlayerSettings.use32BitDisplayBuffer = true;
+            PlayerSettings.stereoRenderingPath = StereoRenderingPath.Instancing;
+            // the XR compositor paces frames; Android's frame pacing (Swappy) has nothing to do here
+            PlayerSettings.Android.optimizedFramePacing = false;
+            // a stack trace per Debug.Log costs about a millisecond on IL2CPP; warnings and errors keep theirs
+            PlayerSettings.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+
+            // quality: XR ignores vSync, no pixel lights (the game has none), per-texture anisotropy (Meta rule)
+            int current = QualitySettings.GetQualityLevel();
+            for (int i = 0; i < QualitySettings.count; i++)
+            {
+                QualitySettings.SetQualityLevel(i, false);
+                QualitySettings.vSyncCount = 0;
+                QualitySettings.pixelLightCount = 1;
+                QualitySettings.anisotropicFiltering = AnisotropicFiltering.Enable;
+                QualitySettings.realtimeReflectionProbes = false;
+                QualitySettings.softParticles = false;
+                QualitySettings.globalTextureMipmapLimit = 0;
+            }
+            QualitySettings.SetQualityLevel(current, false);
+
+            // physics: queries see transforms as of the last step (no forced sync), reused collision objects;
+            // contact offset and solver iterations at Meta's recommended values
+            Physics.autoSyncTransforms = false;
+            Physics.reuseCollisionCallbacks = true;
+            if (Physics.defaultContactOffset < 0.01f) Physics.defaultContactOffset = 0.01f;
+            if (Physics.defaultSolverIterations > 8) Physics.defaultSolverIterations = 6;
+
+            // audio: "Good latency" (512 samples, about 11 ms at 48 kHz) between gunshot latency and CPU wake-ups
+            var audio = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/AudioManager.asset");
+            if (audio.Length > 0)
+            {
+                var so = new SerializedObject(audio[0]);
+                bool set = SetInt(so, "m_RequestedDSPBufferSize", 512, warn: false) | SetInt(so, "m_DSPBufferSize", 512, warn: false);
+                if (!set) Debug.LogWarning("[Stopklatka] DSP buffer size field not found: set Project Settings > Audio > DSP Buffer Size to Good latency.");
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            ConfigureOpenXR();
+        }
+
+        /// <summary>
+        /// OpenXR (com.unity.xr.openxr, checked against 1.16.1): render mode Multi-view (SinglePassInstanced
+        /// on Android, also required by the Depth API), and in the Meta Quest feature symmetric projection
+        /// (Quest 3: smaller eye buffers at every IPD) and optimized buffer discards (memoryless 4x MSAA).
+        /// The Meta Subsampled Layout feature helps foveation. Done by reflection, so the builder still
+        /// compiles without the OpenXR package; anything not found is logged.
+        /// </summary>
+        static void ConfigureOpenXR()
+        {
+            var settingsType = EditorTypeOrNull("UnityEngine.XR.OpenXR.OpenXRSettings");
+            var get = settingsType?.GetMethod("GetSettingsForBuildTargetGroup", BindingFlags.Public | BindingFlags.Static);
+            var settings = get?.Invoke(null, new object[] { BuildTargetGroup.Android }) as UnityEngine.Object;
+            if (settings == null)
+            {
+                Debug.LogWarning("[Stopklatka] OpenXR settings for Android not found: check XR Plug-in Management > OpenXR (render mode Multi-view, Meta Quest feature group).");
+                return;
+            }
+            var renderMode = settingsType.GetProperty("renderMode");
+            if (renderMode != null) renderMode.SetValue(settings, Enum.Parse(renderMode.PropertyType, "SinglePassInstanced"));
+            EditorUtility.SetDirty(settings);
+
+            var getFeature = settingsType.GetMethod("GetFeature", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(Type) }, null);
+            UnityEngine.Object Feature(string typeName)
+            {
+                var t = EditorTypeOrNull(typeName);
+                return t == null || getFeature == null ? null : getFeature.Invoke(settings, new object[] { t }) as UnityEngine.Object;
+            }
+
+            var quest = Feature("UnityEngine.XR.OpenXR.Features.MetaQuestSupport.MetaQuestFeature");
+            if (quest != null)
+            {
+                var so = new SerializedObject(quest);
+                // field names of OpenXR 1.16 (older versions serialized them without the m_ prefix)
+                if (!SetBoolIfFound(so, "m_symmetricProjection", true) && !SetBoolIfFound(so, "symmetricProjection", true))
+                    Debug.LogWarning("[Stopklatka] Meta Quest feature: symmetric projection field not found; turn it on in the OpenXR Meta Quest feature settings.");
+                if (!SetBoolIfFound(so, "m_optimizeBufferDiscards", true) && !SetBoolIfFound(so, "optimizeBufferDiscards", true))
+                    Debug.LogWarning("[Stopklatka] Meta Quest feature: optimize buffer discards field not found.");
+                so.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(quest);
+            }
+            else Debug.LogWarning("[Stopklatka] OpenXR Meta Quest feature not found.");
+
+            var subsampled = Feature("Meta.XR.MetaXRSubsampledLayout");
+            var enabled = subsampled != null ? subsampled.GetType().GetProperty("enabled") : null;
+            if (enabled != null) { enabled.SetValue(subsampled, true); EditorUtility.SetDirty(subsampled); }
+            Debug.Log($"[Stopklatka] OpenXR: render mode {renderMode?.GetValue(settings)}, Meta Quest feature {(quest != null ? "symmetric projection + buffer discards on" : "missing")}, " +
+                      $"subsampled layout {(enabled != null ? "on" : "not found")}.");
+        }
+
+        static Type EditorTypeOrNull(string fullName) =>
+            AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType(fullName)).FirstOrDefault(t => t != null);
+
+        static bool SetBoolIfFound(SerializedObject so, string field, bool value)
+        {
+            var p = so.FindProperty(field);
+            if (p == null || p.propertyType != SerializedPropertyType.Boolean) return false;
+            p.boolValue = value;
+            return true;
+        }
+
+        static bool SetInt(SerializedObject so, string field, int value, bool warn = true)
+        {
+            var p = so.FindProperty(field);
+            if (p == null)
+            {
+                if (warn) Debug.LogWarning($"[Stopklatka] Field {field} not found on {so.targetObject.GetType().Name}; set it in the Inspector.");
+                return false;
+            }
+            p.intValue = value;
+            return true;
         }
 
         static void ConfigureUrp()
@@ -92,7 +224,62 @@ namespace Stopklatka.EditorTools
                 urp.supportsCameraOpaqueTexture = false;
                 urp.useSRPBatcher = true;
                 urp.renderScale = 1f;   // OVRManager raises it to the dynamic-resolution maximum at runtime
+                // stage 7: no additional lights (the game has no lights at all), no dynamic batching (SRP batcher
+                // and instancing do the work). Serialized fields: their C# setters are internal.
+                var so = new SerializedObject(urp);
+                SetInt(so, "m_AdditionalLightsRenderingMode", 0);   // Disabled
+                SetBoolIfFound(so, "m_SupportsDynamicBatching", false);
+                so.ApplyModifiedPropertiesWithoutUndo();
+                ConfigureUrpRenderers(so);
                 EditorUtility.SetDirty(urp);
+            }
+        }
+
+        /// <summary>
+        /// The URP renderers: Forward (not Forward+ or Deferred), no depth priming, intermediate texture
+        /// Auto (Meta rule), and the expensive renderer features off (SSAO, decals, screen space shadows).
+        /// Other features stay as they are and are listed in the log.
+        /// </summary>
+        static void ConfigureUrpRenderers(SerializedObject urp)
+        {
+            var list = urp.FindProperty("m_RendererDataList");
+            if (list == null || !list.isArray) return;
+            for (int i = 0; i < list.arraySize; i++)
+            {
+                var data = list.GetArrayElementAtIndex(i).objectReferenceValue;
+                if (data == null) continue;
+                var so = new SerializedObject(data);
+                var mode = so.FindProperty("m_RenderingMode");
+                if (mode != null && mode.intValue != 0)
+                {
+                    Debug.Log($"[Stopklatka] URP renderer {data.name}: rendering mode {mode.intValue} -> Forward.");
+                    mode.intValue = 0;   // Forward
+                }
+                var priming = so.FindProperty("m_DepthPrimingMode");
+                if (priming != null) priming.intValue = 0;      // Disabled
+                var intermediate = so.FindProperty("m_IntermediateTextureMode");
+                if (intermediate != null) intermediate.intValue = 0;   // Auto
+                so.ApplyModifiedPropertiesWithoutUndo();
+
+                var features = so.FindProperty("m_RendererFeatures");
+                if (features == null || !features.isArray) continue;
+                for (int f = 0; f < features.arraySize; f++)
+                {
+                    var feature = features.GetArrayElementAtIndex(f).objectReferenceValue;
+                    if (feature == null) continue;
+                    var fso = new SerializedObject(feature);
+                    var active = fso.FindProperty("m_Active");
+                    string type = feature.GetType().Name;
+                    bool expensive = type.Contains("AmbientOcclusion") || type.Contains("Decal") || type.Contains("ScreenSpaceShadows");
+                    if (active != null && expensive && active.boolValue)
+                    {
+                        active.boolValue = false;
+                        fso.ApplyModifiedPropertiesWithoutUndo();
+                        Debug.Log($"[Stopklatka] URP renderer {data.name}: feature {feature.name} ({type}) turned off.");
+                    }
+                    else Debug.Log($"[Stopklatka] URP renderer {data.name}: feature {feature.name} ({type}) {(active == null || active.boolValue ? "on" : "off")}, left as is.");
+                }
+                EditorUtility.SetDirty(data);
             }
         }
 

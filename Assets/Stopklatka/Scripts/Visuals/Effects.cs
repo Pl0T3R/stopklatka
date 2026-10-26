@@ -161,12 +161,14 @@ namespace Stopklatka
                 _flashMesh = b.ToMesh("Flash");
             }
             var go = MeshKit.Part("Flash", null, _flashMesh, Mats.Get(Mats.Flash));
+            InstancedPart.Attach(go, InstanceGroup.Effects);
             return go.AddComponent<Flash>();
         }
 
         static Flash CreateGlowFlash()
         {
             var go = MeshKit.Part("Glow Flash", null, GlowKit.Flash, Mats.Get(Mats.Glow));
+            InstancedPart.Attach(go, InstanceGroup.Effects);
             var f = go.AddComponent<Flash>();
             f.Glow = true;
             return f;

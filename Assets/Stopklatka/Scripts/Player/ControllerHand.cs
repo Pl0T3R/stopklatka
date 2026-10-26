@@ -77,6 +77,7 @@ namespace Stopklatka
 
         void Update()
         {
+            using var perfScope = PerfMarkers.Hands.Auto();
             if (PlayerRig.Instance == null) return;
             Subscribe();
 

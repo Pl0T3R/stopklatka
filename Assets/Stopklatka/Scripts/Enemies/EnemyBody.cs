@@ -31,6 +31,8 @@ namespace Stopklatka
         public Transform Hips, Chest, Head, ShoulderL, ShoulderR, ElbowL, ElbowR, HandSocketR, HipL, HipR, KneeL, KneeR, Shadow;
         /// <summary>All part renderers (for the reveal material).</summary>
         public Renderer[] Parts;
+        /// <summary>The parts' markers for instanced drawing (suspended while the enemy forms).</summary>
+        public InstancedPart[] Instanced;
         /// <summary>The same parts with their break caps (for shattering and the katana cut).</summary>
         public BodyPart[] Pieces;
 
@@ -76,6 +78,8 @@ namespace Stopklatka
         /// <summary>Switches to the reveal material: everything above worldY is cut away.</summary>
         public void BeginReveal(Material reveal, float worldY)
         {
+            // the reveal height is a per-renderer value: these parts draw on their own until it ends
+            InstancedPart.SetSuspended(Instanced, true);
             foreach (var r in Parts) r.sharedMaterial = reveal;
             SetReveal(worldY);
         }
@@ -95,6 +99,33 @@ namespace Stopklatka
                 r.SetPropertyBlock(null);
                 r.sharedMaterial = normal;
             }
+            InstancedPart.SetSuspended(Instanced, false);
+        }
+
+        /// <summary>
+        /// Back to the pose Build() made (a pooled enemy coming back): no aim, punch, guard or wobble,
+        /// relaxed joints, the stride phase from the start.
+        /// </summary>
+        public void ResetPose()
+        {
+            AimTarget = null;
+            AimBlend = 0f;
+            Windup = 0f;
+            Punch = 0f;
+            Guard = 0f;
+            Wobble = 0f;
+            Appear = 0f;
+            _phase = 0f;
+            _armR = _elbowR = _armL = _elbowL = Quaternion.identity;
+            Hips.localPosition = new Vector3(0f, _hipsBaseY, 0f);
+            Hips.localRotation = Quaternion.identity;
+            Chest.localRotation = Quaternion.identity;
+            Head.localRotation = Quaternion.identity;
+            ShoulderL.localRotation = ShoulderR.localRotation = Quaternion.identity;
+            ElbowL.localRotation = ElbowR.localRotation = Quaternion.identity;
+            HipL.localRotation = HipR.localRotation = Quaternion.identity;
+            KneeL.localRotation = KneeR.localRotation = Quaternion.identity;
+            if (Shadow != null) Shadow.localScale = Vector3.one * 0.2f;
         }
 
         /// <summary>
@@ -222,6 +253,7 @@ namespace Stopklatka
 
             var shadow = MeshKit.Part("Shadow", root, _shadowMesh, shadowMat);
             shadow.transform.localPosition = new Vector3(0f, 0.008f, 0f);
+            InstancedPart.Attach(shadow, InstanceGroup.Enemies);   // all floor shadows in one draw
             body.Shadow = shadow.transform;
 
             body.Hips = Pivot("Hips", root, new Vector3(0f, HipY, 0f));
@@ -255,7 +287,13 @@ namespace Stopklatka
                 Piece("ShinR", body.KneeR, _shinMesh, mat, new Vector3(0f, 0.025f, 0f), up, new Vector2(0.062f, 0.062f), true),
             };
             body.Parts = new Renderer[body.Pieces.Length];
-            for (int i = 0; i < body.Pieces.Length; i++) body.Parts[i] = body.Pieces[i].Renderer;
+            body.Instanced = new InstancedPart[body.Pieces.Length];
+            for (int i = 0; i < body.Pieces.Length; i++)
+            {
+                body.Parts[i] = body.Pieces[i].Renderer;
+                // every enemy's thighs (and so on) in one instanced draw (InstanceDrawer)
+                body.Instanced[i] = InstancedPart.Attach(body.Parts[i].gameObject, InstanceGroup.Enemies);
+            }
             body._hipsBaseY = body.Hips.localPosition.y;
             return body;
         }

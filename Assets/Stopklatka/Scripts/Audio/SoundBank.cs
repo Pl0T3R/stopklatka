@@ -154,6 +154,7 @@ namespace Stopklatka
 
         void Update()
         {
+            using var perfScope = PerfMarkers.Sound.Auto();
             float p = WorldPitch();
             if (_mixerPitch) _mixer.SetFloat(WorldPitchParam, p);
             else

@@ -15,6 +15,9 @@ namespace Stopklatka
         float _age, _delay, _grow, _length, _width, _until;
         bool _spot;
 
+        /// <summary>The body part it is drawn on.</summary>
+        public Transform Target => _target;
+
         public void Show(Transform target, Vector3 worldPos, Quaternion worldRot, float length, float width, float delay, float grow, float lifetime, bool spot)
         {
             _target = target;
@@ -32,6 +35,7 @@ namespace Stopklatka
 
         void Update()
         {
+            using var perfScope = PerfMarkers.Cracks.Auto();
             _age += Time.deltaTime;
             if (_target == null || !_target.gameObject.activeInHierarchy || _age > _until)
             {
@@ -122,6 +126,18 @@ namespace Stopklatka
 
         public static void Release(CrackFx fx) => PoolInstance.Release(fx);
 
+        /// <summary>Removes the cracks drawn on anything under root (a pooled enemy going back to its pool).</summary>
+        public static void ReleaseOn(Transform root)
+        {
+            if (_pool == null || root == null) return;
+            var active = _pool.Active;
+            for (int i = active.Count - 1; i >= 0; i--)
+            {
+                var target = active[i].Target;
+                if (target != null && target.IsChildOf(root)) Release(active[i]);
+            }
+        }
+
         /// <summary>Creates the pool now (at load time) instead of at the first punch kill.</summary>
         public static void Prewarm() => _ = PoolInstance;
 
@@ -130,6 +146,7 @@ namespace Stopklatka
         static CrackFx Create()
         {
             var go = MeshKit.Part("Crack", null, GlowKit.Crack, Mats.Get(Mats.Glow));
+            InstancedPart.Attach(go, InstanceGroup.Effects);
             return go.AddComponent<CrackFx>();
         }
     }

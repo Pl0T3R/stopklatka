@@ -21,6 +21,7 @@ namespace Stopklatka
 
         public void Tick(ControllerHand hand)
         {
+            using var perfScope = PerfMarkers.Fist.Auto();
             var cfg = GameConfig.Instance.player;
             var anchor = hand.Anchor;
             EnsureVisual(hand, anchor);

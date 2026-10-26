@@ -47,6 +47,7 @@ namespace Stopklatka
 
         void Update()
         {
+            using var perfScope = PerfMarkers.Bullets.Auto();
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
             _age += dt;
@@ -61,7 +62,7 @@ namespace Stopklatka
             int n = Physics.RaycastNonAlloc(pos, dir, Hits, dist, mask, QueryTriggerInteraction.Collide);
             if (n > 0)
             {
-                System.Array.Sort(Hits, 0, n, HitComparer.Instance);
+                SortByDistance(Hits, n);
                 for (int i = 0; i < n; i++)
                     if (TryHandleHit(Hits[i])) return;
             }
@@ -181,10 +182,21 @@ namespace Stopklatka
             return false;
         }
 
-        class HitComparer : System.Collections.Generic.IComparer<RaycastHit>
+        /// <summary>Nearest hit first. At most 8 hits: an insertion sort, no allocations.</summary>
+        static void SortByDistance(RaycastHit[] hits, int count)
         {
-            public static readonly HitComparer Instance = new();
-            public int Compare(RaycastHit a, RaycastHit b) => a.distance.CompareTo(b.distance);
+            for (int i = 1; i < count; i++)
+            {
+                var h = hits[i];
+                float d = h.distance;
+                int j = i - 1;
+                while (j >= 0 && hits[j].distance > d)
+                {
+                    hits[j + 1] = hits[j];
+                    j--;
+                }
+                hits[j + 1] = h;
+            }
         }
     }
 }

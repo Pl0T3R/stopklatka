@@ -28,6 +28,17 @@ namespace Stopklatka
             Physics.IgnoreLayerCollision(Nav, Grabbable);
             Physics.IgnoreLayerCollision(Nav, Shard);
             Physics.IgnoreLayerCollision(Nav, Enemy);
+            // stage 7: pairs that can never produce a contact the game uses (kinematic enemies against
+            // static rooms and each other, the player's trigger hitboxes against the room, static NavMesh
+            // geometry against everything). Queries (raycasts, overlaps) ignore this matrix anyway.
+            Physics.IgnoreLayerCollision(Enemy, Room);
+            Physics.IgnoreLayerCollision(Enemy, Enemy);
+            Physics.IgnoreLayerCollision(Player, Room);
+            Physics.IgnoreLayerCollision(Player, Player);
+            Physics.IgnoreLayerCollision(Player, Nav);
+            Physics.IgnoreLayerCollision(Nav, Nav);
+            Physics.IgnoreLayerCollision(Nav, Room);
+            Physics.IgnoreLayerCollision(Room, Room);
             // room walls are thin one-sided meshes: hit them from either side
             Physics.queriesHitBackfaces = true;
         }

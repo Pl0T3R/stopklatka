@@ -59,6 +59,8 @@ namespace Stopklatka
             Hud.Instance.Title("STOPKLATKA", 0f, Color.white);
             Hud.Instance.Sub("Wczytuję skan pomieszczeń…", 0f);
             Shatter.Prewarm();   // pools for shards, debris, cracks and flashes, while the scan loads
+            Factory.PrewarmPools();   // enemies and guns, so a spawn in a fight builds nothing
+            StartCoroutine(PipelineWarmup.Run());   // draw every material once, so first uses don't stall
             float until = Time.realtimeSinceStartup + 15f;
             while (RoomService.Instance != null && !RoomService.Instance.Ready && Time.realtimeSinceStartup < until) yield return null;
             var problem = RoomService.Instance != null ? RoomService.Instance.Problem : null;
@@ -67,9 +69,10 @@ namespace Stopklatka
 
         void Update()
         {
+            using var perfScope = PerfMarkers.Game.Auto();
             var rig = PlayerRig.Instance;
             var perf = PerformanceManager.Instance;
-            Hud.Instance.Perf(perf != null && perf.ShowReadout ? perf.Readout() : "");
+            Hud.Instance.Perf(perf != null && perf.ShowReadout ? perf.Readout() : "");   // cached text, rebuilt twice a second
             if (rig == null || Current == State.Booting) return;
 
             // Leaving the scanned area pauses the game and shows the real world plainly.
@@ -110,6 +113,8 @@ namespace Stopklatka
         void EnterMenu(string problem)
         {
             StopFlow();
+            // a display rate stepped down during a fight (performance.allowRefreshStepDown) comes back here
+            if (PerformanceManager.Instance != null) PerformanceManager.Instance.RestoreTargetRefreshRate();
             if (LevelManager.Instance != null) LevelManager.Instance.Stop();   // also removes the level props
             ClearMenuTargets();
             Current = State.Menu;
@@ -425,7 +430,7 @@ namespace Stopklatka
             {
                 if (keepHeld && g.Holder != null) continue;
                 if (g.EnemyOwner != null) continue;
-                Destroy(g.gameObject);
+                Factory.Recycle(g);   // guns back to the gun pool, the rest destroyed
             }
         }
 

@@ -54,8 +54,12 @@ It has **never been opened in Unity or run on a headset**. Expect to fix compile
 
 ## Verification checklist (from the plan)
 
-- [ ] No exceptions in the logs. The log shows `display 90 Hz` (120 Hz when `performance.targetRefreshRate` in GameConfig is 120), `physics step 1/90 s` and the eye texture size.
-- [ ] With 8 enemies on screen, OVR Metrics or `metavr perf` shows a stable 90 fps and p95 frame time under 11.1 ms (with the 120 Hz option: 120 fps, 8.3 ms). The resolution drops only when needed.
+- [ ] No exceptions in the logs. The log shows `display 90 Hz` (120 Hz when `performance.targetRefreshRate` in GameConfig is 120), `physics step 1/90 s` and the eye texture size. Every 5 s it also shows the average and worst frame time and `instanced N draws / M objects`.
+- [ ] With 6 enemies on screen (the cap) and a multi-kill, OVR Metrics or `metavr perf` shows a stable 90 fps and p95 frame time under 11.1 ms (with the 120 Hz option: 120 fps, 8.3 ms). The resolution drops only when needed. Take the measurements listed under "Performance" below.
+- [ ] Performance readout (left thumbstick click, Development Build): DC at most 150 in the worst fight, GC 0 B per frame while fighting (allocations only at spawns, kills and level changes), `instancje` lists the instanced draws.
+- [ ] Instancing on (default) and off (`performance.instancedRendering`) look the same: shards in two reds and glowing yellow, bullet streaks, chunks with glowing caps, cracks, enemies, items on the floor, props. Depth API occlusion still hides them behind real objects. Held items and the fist never lag behind the controller.
+- [ ] Pooling: after 3 levels and a few deaths, enemies still form from the floor with the glowing edge, aim, guard and punch normally; no enemy appears with cracks, a raised arm or without colliders. Guns from a restarted level come back loaded.
+- [ ] Log at start: `Warm-up: 21 materials drawn plain and instanced`, then again `with Depth API occlusion on`. The first kill, first reveal and first title don't hitch (Perfetto: no long frame there).
 - [ ] Time nearly stops when standing still and speeds up with head or hand movement (details in "Time test scene" below).
 - [ ] All the weapons work:
   - pistol: 4 shots,
@@ -168,6 +172,84 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
   - The bottle is dark glass; the katana blade is black with a light edge.
 - [ ] Afterwards: **Stopklatka → Build Settings: Game Scene**.
 
+## Performance (stage 7)
+
+Budget at 90 Hz: 11.1 ms per frame, at most 150 draw calls and 150k triangles in view, passthrough and the Depth API included. Triangle counts come from the real meshes: a scratchpad harness ran every `MeshKit.Builder` against the Unity DLLs and counted the triangles before `ToMesh`.
+
+Mesh sizes (triangles): enemy 452 (hips 48, chest 48, head 84, upper arm 36 ×2, forearm 36 ×2, thigh 28 ×2, shin 36 ×2) + floor shadow 72; pistol 60, shotgun 100, SMG 84, katana 44 + 15, bottle 96, mug 68, ashtray 68, block 12, ball 20, fist 96, menu cube 12; bullet slug 24 + streak 20; shards 4 / 8 / 20 (average 9); glow cap 21, crack 5, kill flash 20, muzzle flash 20, spawn ring 200, hit vignette 240; plinth 36, counter 48, car 176, statue 452, half column 42, lamp post 48, rail 108–216 (by length), trim 36, elevator frame 36, light panels 10. TMP text: 2 per character.
+
+Worst case on screen (6 enemies, 2 of them still forming, 48 bullets, a multi-kill with full shards and debris, 20 loose items, GALERIA props, texts):
+
+| Element | Count | Draw calls before | Draw calls now | Triangles |
+| --- | --- | --- | --- | --- |
+| Enemies (11 parts + shadow) | 6 | 72 | 30 (8 instanced + 11 per forming enemy) | 3 144 |
+| Loose items and enemy guns | 20 + 6 | 28 | 10 (one per item mesh) | 2 600 |
+| Held items / fists | 2 | 3 | 3 | 300 |
+| Bullets (slug + streak) | 48 | 96 | 3 | 2 112 |
+| Shards | 320 | 320 | 32 (4 materials × 8 shapes; 56 if 7 materials) | 2 880 (6 400 max) |
+| Debris chunks and caps | 72 | 72 | 8 | 6 048 max |
+| Cracks | 40 | 40 | 2 | 840 |
+| Flashes (muzzle, kill) | 16 | 16 | 2 | 320 |
+| Spawn rings | 2 (6 max) | 2–6 | 2–6 | 400–1 200 |
+| Props (GALERIA, the biggest) | 24 | 24 | 8 | 3 304 |
+| Texts (title, subtitle; TMP Polish fallback atlas) | 2 | 4 | 4 | ~200 |
+| Hit vignette | 1 | 1 | 1 | 240 |
+| Depth API preprocess + hand mask | – | 3 | 3 | ~10 |
+| Debug: readout + wrist gauge | – | 6 | 6 | ~600 |
+| **Total** | | **≈ 690** | **≈ 108 typical, 142 worst** | **≈ 27k (max)** |
+
+Triangles were never the problem (27k of 150k; vertices are 3 per triangle because of the flat facets, each drawn for both eyes by multiview). Draw calls were: about 690 before, at most 142 now.
+
+What stage 7 changed:
+- **Instanced rendering** (`Visuals/InstanceDrawer.cs`, `InstancedPart.cs`): one `Graphics.RenderMeshInstanced` per mesh and material for shards, bullets, debris, caps, cracks, flashes, enemy bodies and shadows, loose items and props. Switch: `performance.instancedRendering` and four group switches. No shader change: `Crystal`, `Transparent` and `Text` already had `multi_compile_instancing` and the stereo macros, and the builder already turned GPU instancing on for every material.
+- **Pooling**: enemies and their guns (`EnemyPool`, `GunPool`, `performance.poolEnemies`), 6 enemies and 2 guns of each kind built while the scan loads. Already pooled before: bullets (48), shards (320), debris (72), cracks (40), flashes, spawn rings, sound voices (24). Not pooled, on purpose: props, menu cubes, pickups and texts (created once per level or menu, never in a fight), bottles that break (one Destroy per throw).
+- **CPU**: no per-frame allocations in the fight loop (the bullet hit sort is an insertion sort, the readout text is rebuilt twice a second, the floor-height shader global is set only when it changes, the katana skips a second component lookup). Profiler markers `Stopklatka.*` around time, hands, fist, katana, bullets, enemies, shatter, shards, debris, cracks, sound, HUD, game, levels, props, room, spawn and the instanced draw (`Core/PerfMarkers.cs`). More physics layer pairs ignored (enemy–room, enemy–enemy, player–room and others that never need contacts). `Time.maximumDeltaTime` 0.1 s.
+- **Warm-up** (`Visuals/PipelineWarmup.cs`): every material drawn invisibly, plain and instanced, during loading and again when the Depth API occlusion keyword turns on; one hidden text with all Polish letters.
+- **Dynamic resolution fallback** and the optional **72 Hz step-down** in `PerformanceManager` (see Known risks).
+
+Settings the builder now sets (Stopklatka → 1. Configure Project, also in Build Game). Old values are Unity 6 / template defaults:
+
+| Setting | Old | New |
+| --- | --- | --- |
+| IL2CPP code generation | OptimizeSpeed (default) | OptimizeSpeed (explicit) |
+| IL2CPP compiler configuration | Release (default) | Release (explicit) |
+| Managed stripping (Android) | Minimal (default) | Minimal (explicit; Low/High could strip what the Meta SDK and MRUK reach by reflection) |
+| Multithreaded rendering (+ mobile) | template value | on (Meta rule) |
+| Graphics jobs | off | on, Legacy mode (Meta rule) |
+| 32-bit display buffer | template value | on (Meta rule) |
+| Stereo rendering path (legacy setting) | template value | Instancing (Meta rule) |
+| Android optimized frame pacing | on | off (the XR compositor paces frames) |
+| Stack trace for `Debug.Log` | ScriptOnly | None (warnings and errors keep theirs) |
+| Quality: vSync count (all levels) | 1 | 0 (XR ignores it) |
+| Quality: pixel lights | template value | 1 (Meta rule; the game has no lights) |
+| Quality: anisotropic filtering | template value | Per texture (Meta rule) |
+| Quality: realtime reflection probes, soft particles | template value | off |
+| Physics: auto sync transforms | off (default) | off (explicit) |
+| Physics: reuse collision callbacks | on (default) | on (explicit) |
+| Physics: contact offset / solver iterations | 0.01 / 6 | unchanged if within Meta's limits (≥ 0.01 / ≤ 8) |
+| Audio DSP buffer | Best performance (1024) | Good latency (512) |
+| URP additional lights | Per pixel | Disabled |
+| URP dynamic batching | template value | off (SRP batcher + instancing) |
+| URP renderer: rendering mode / depth priming / intermediate texture | template value | Forward / Disabled / Auto |
+| URP renderer features | template value | SSAO, Decals, Screen Space Shadows off; others listed in the log |
+| OpenXR render mode (Android) | Single Pass Instanced = Multi-view (default) | same, explicit (the Depth API requires it) |
+| OpenXR Meta Quest: symmetric projection | off | on |
+| OpenXR Meta Quest: optimize buffer discards | on (default) | on (explicit) |
+| Meta XR Subsampled Layout feature | off | on (Meta rule, helps foveation) |
+| Already set before stage 7 | | IL2CPP ARM64, Vulkan, Linear, ASTC, MSAA 4×, HDR off, shadows off, depth/opaque textures off, post-processing off, FFR High + dynamic, dynamic resolution 1.0–1.205 |
+
+None of these conflicts with Meta's Project Setup Tool: each one is what its rule asks for. Symmetric projection is the one new choice: check that the Depth API edges still line up (a real hand in front of an enemy).
+
+**Measurements to take on the headset** (Development Build for the readout counters and markers; release build for the final fps):
+1. `metavr perf` (or OVR Metrics with the overlay) in the menu, 60 s: fps, CPU and GPU frame time, CPU/GPU level. Baseline.
+2. Level 1 to 3 played through at school and at home: fps, p95 frame time, GPU utilisation, dropped frames. Target 90 fps, p95 under 11.1 ms.
+3. Stress: endless waves (`levels.useLevels` off) to FALA 6+, 6 enemies, then kill 3 at once (shotgun) standing still, then move: worst frame time and the readout (DC, SetPass, triangles, GC per frame, markers).
+4. The same stress with `performance.instancedRendering` off: the difference in DC and GPU time is what instancing buys.
+5. A Perfetto trace (skill `hz-perfetto-debug`) of 10 s of the stress fight: main thread vs render thread vs GPU, `Stopklatka.*` markers, long frames at spawns (pooling) and at the first kill (warm-up).
+6. Dynamic resolution: the 5 s log line (`viewport` and `scale`) during the stress fight; if frames drop and the viewport stays 1.00, run once with `resolutionFallback` Force and compare.
+7. 120 Hz option (`targetRefreshRate` 120): steps 2–3 again; keep 90 if p95 goes over 8.3 ms.
+8. Thermal: 15 minutes of play, note when CPU/GPU levels or fps change.
+
 ## Where to tune (most likely needed on the real device)
 
 - `Resources/GameConfig.asset` (created by Build Game, edit it in the Inspector, also in Play mode):
@@ -180,8 +262,8 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
   - `shatter`: shard count, sizes, colors and lifetimes, which parts turn to dust (`pulverizeRadius`), big chunks (`chunkLifetime`, `chunkPush`, `maxPieces`), the yellow flash, the katana cut (`katanaCutsInHalf`, `cutHalfSeconds`, speeds, shard counts), the punch cracks (`punchCracks`, `crackSeconds`, `crackCount`, `crackLength`),
   - `levels`: `useLevels` (off = endless waves), `restartDelay` (1.5 s), intro, wave gap, spawn interval, chant repeats, pickups, and the 3 levels with their waves (enemies, alive at once, armed / shotgun / SMG shares, difficulty 1..9),
   - `school` / `home`: per-mode numbers (spawn distances, enemies at once and per wave, enemy speed and bullet speed, how often enemies spawn in your room). The factory defaults are in `Scripts/Core/GameMode.cs`,
-  - `performance`: refresh rate (90 or 120), foveation,
-  - `debug`: the wrist time gauge, the FPS readout at start, and `editorSampleRoom` (the MRUK sample room loaded in the Editor when there is no scan; empty = off),
+  - `performance`: refresh rate (90 or 120), foveation, instanced rendering (master switch and per group: `instanceEffects`, `instanceEnemies`, `instanceItems`, `instanceProps`), pooling (`poolEnemies`, `prewarmEnemies`, `prewarmGunsPerKind`), the shader warm-up (`warmUpShaders`, `warmUpFrames`), `maxDeltaTime` (0.1 s), the resolution fallback (`resolutionFallback` Off / Auto / Force, `fallbackMinScale` / `MaxScale` 1.0 / 1.205, `fallbackStep`, `fallbackDownAfter`, `fallbackUpAfter`, `overBudgetFactor`) and the 72 Hz step-down (`allowRefreshStepDown`, off by default),
+  - `debug`: the wrist time gauge, the FPS readout at start (`readoutInterval`, `readoutMarkers`), and `editorSampleRoom` (the MRUK sample room loaded in the Editor when there is no scan; empty = off),
   - `props` (stage 6): on/off, how many (`maxProps` 14, `maxFurnitureProps` 6, `maxWallProps` 8), the safety distances (`minPlayerDistance` 1.5 m, `wallMargin` 0.2 m, `maxWallDepth` 0.18 m, `floorTolerance`, `maxHeight` 2.3 m), shapes (statue height, window width, floor light depth, wall spacing), the rise and sink times, HOL's door spawn chance and the haze (color, start, end, strength),
   - `menu` (stage 6): cubes or crystals, cube sizes, the arc (radius, row heights, angles), extra grab radius, quit confirm time,
   - `ui` (stage 6): TMP on/off, the TMP font and material, shadow color, title / subtitle / label sizes, where titles appear (wall distances, default distance, height, keep and re-anchor angles),
@@ -199,16 +281,21 @@ Run **Stopklatka → Build Time Test Scene**, then Build And Run. It needs no sc
 - `Scripts/World/LevelProps.cs`: what each theme puts where (`BuildGaleria`, `BuildUlica`, `BuildHol`: which furniture becomes a car or a counter, statue rules, how wall props alternate). `Scripts/World/PropPlanner.cs`: the safety geometry (which anchors block a wall, 0.45 m for furniture in front of a wall, 0.6 m storey tolerance). `Scripts/Visuals/PropKit.cs`: the prop shapes (plinth, counter, car, half column, lamp post, rail, trim, elevator frame, light panels). `Enemies/EnemyBody.cs` → `StatueMesh`: the three statue poses.
 - `Editor/StopklatkaBuilder.cs`:
   - the dynamic resolution range (`quest3Min/MaxDynamicResolutionScale` = 1.0 / 1.205),
+  - the stage 7 project settings (`ConfigurePerformance`, `ConfigureOpenXR`, `ConfigureUrp`, `ConfigureUrpRenderers`; table under "Performance"),
   - which scene labels become colliders (`EffectMesh.Labels`) and NavMesh obstacles.
 
 ## Known risks to watch
 
 - **GameConfig:** if `Resources/GameConfig.asset` is missing, the log says so and code uses the defaults from `GameConfig.cs`. Stopklatka → 4. Create Game Config makes it. Fields added later keep their code defaults in an existing asset.
-- **Dynamic resolution** depends on the OpenXR plugin version (see `OVRManager`). If `renderViewportScale` never changes, set `XRSettings.eyeTextureResolutionScale` directly in `PerformanceManager`.
+- **Dynamic resolution** (checked in the SDK 207 source): with OpenXR, `OVRManager` sets `eyeTextureResolutionScale` and URP `renderScale` to the maximum (1.205) at start, then every frame sets `XRSettings.renderViewportScale` from the runtime's recommended eye resolution (`OVRPlugin.GetEyeLayerRecommendedResolution`, at most 32 px per frame). It needs Unity 6000.0.25f1 or newer (else it turns itself off and logs an error) and a runtime that returns a recommendation. `PerformanceManager` checks both 2 s after start: if either is missing (`resolutionFallback` Auto) it logs `Resolution fallback on (...)` and scales `eyeTextureResolutionScale` + URP `renderScale` itself in 0.05 steps (down after 1.5 s of missed frames, up after 8 s without, waiting longer after a failed step up). Each step reallocates the eye textures (a short hitch), which is why steps are rare. If frames are missed for 10 s while the viewport scale stays 1.00, the log says so: try `Force` to compare.
+- **Instanced rendering (stage 7):** `InstanceDrawer` draws shards, bullets, debris, cracks, flashes, enemy bodies and shadows, loose items and props with `Graphics.RenderMeshInstanced` in `LateUpdate`, and hides their renderers with `forceRenderingOff` (the renderers stay enabled, so `Renderer.bounds` keeps working for the shatter code). Things that follow the controller (held items, the fist, the vignette) are never instanced: OVRCameraRig moves them again in `onBeforeRender`, after `LateUpdate`, and an instanced copy would lag a frame. Forming enemies use their renderers (per-renderer reveal height). Transparent instanced groups (streaks, caps, cracks) are sorted as one group, not per object; if overlapping streaks or caps blend wrongly, switch `instanceEffects` off and compare. With multiview the shaders' stereo macros handle both eyes in one draw; in single pass instanced (Link in the Editor) Unity doubles the instances itself. If anything turns invisible or pink only with instancing, check that the material has GPU instancing on (the builder sets it on every material; the log warns per material otherwise) and that the `INSTANCING_ON` variants were not stripped (Project Settings > Graphics > Instancing Variants).
+- **Pooling (stage 7):** enemies and guns are reused (`EnemyPool`, `GunPool`). `Enemy.Init` resets state, aim, burst, guard, punch, reveal, colliders, NavMeshAgent (warp, `ResetPath`) and `EnemyBody.ResetPose` the joints; `Gun.ResetForReuse` gives full ammo, no holder or enemy, restored collisions and visible renderers. Cracks drawn on a body are removed when it goes back to the pool. If an enemy ever appears in a wrong pose or state, switch `performance.poolEnemies` off: everything is then created and destroyed as before.
+- **Warm-up:** `PipelineWarmup` draws every material at 1e-6 scale 0.5 m in front of you for 3 frames during loading (plain and instanced) and once more when the Depth API keyword turns on. If a hitch remains at the first kill, record a Perfetto trace and look for `vkCreateGraphicsPipelines` in that frame; the next step would be a `GraphicsStateCollection` recorded on the device.
+- **72 Hz step-down** (`allowRefreshStepDown`, off): after 5 s of missed frames at the lowest resolution the display goes to 72 Hz (physics follows: one step per frame) and comes back to the target rate in the menu. Each change is logged as `Refresh step-down: ...`.
 - **Door frames:** `EffectMesh.CutHoles = DOOR_FRAME` cuts doorways out of the wall meshes, and the wall colliders are built from those meshes. If bullets still stop in doorways, check in the Scene view that the generated wall `MeshCollider`s have the holes.
 - **Floors:** `RoomService.UpdateFloor` takes the floor height from `MRUK.GetCurrentRoom()` every frame (its first `FloorAnchors` entry; the single `FloorAnchor` property is obsolete in MRUK 207 and would warn). Stairs are outside every room, so the game pauses there on purpose.
 - **Reveal effect:** during spawn-in the 11 enemy parts use the `EnemyReveal` material (keyword `_REVEAL`) plus a `MaterialPropertyBlock`, which takes them out of the SRP batcher for 0.9 s. If the keyword variant is stripped from the build, enemies appear without the effect; keep the material in `Resources/Materials`. An enemy killed while forming finishes forming first, so its pieces are whole.
-- **Death effects** (`Enemies/Shatter.cs`, `Debris.cs`, `Cracks.cs`): big chunks are copies of the dead enemy's part meshes in pooled debris (`EnemyCrystal`, batched), and the glowing caps, cut faces, cracks and the kill flash use the new `FractureGlow` material (`Stopklatka/Transparent`, white) with the colors in the meshes' vertex colors (linear values of `#FFD84D` / `#FF9A1F`). If the glow looks washed out or too dark, check the color space (must be Linear) before touching the colors. Glowing shards use the new `ShardGlow` material (`Stopklatka/Crystal`). Chunks move on their own (no Rigidbody): they bounce on the enemy's floor height but pass through real walls; they only fly about a metre. A kill spawns up to about 20 chunk and cap pieces and 60 shards; the pools are created while the scan loads (`Shatter.Prewarm`). Watch `metavr perf` when 3 or more enemies die at once.
+- **Death effects** (`Enemies/Shatter.cs`, `Debris.cs`, `Cracks.cs`): big chunks are copies of the dead enemy's part meshes in pooled debris (`EnemyCrystal`, batched), and the glowing caps, cut faces, cracks and the kill flash use the new `FractureGlow` material (`Stopklatka/Transparent`, white) with the colors in the meshes' vertex colors (linear values of `#FFD84D` / `#FF9A1F`). If the glow looks washed out or too dark, check the color space (must be Linear) before touching the colors. Glowing shards use the new `ShardGlow` material (`Stopklatka/Crystal`). Chunks move on their own (no Rigidbody): they bounce on the enemy's floor height but pass through real walls; they only fly about a metre. A kill spawns up to about 20 chunk and cap pieces and 60 shards; the pools are created while the scan loads (`Shatter.Prewarm`). Since stage 7 shards, chunks and caps are drawn instanced (at most one draw per shard shape and material). Watch `metavr perf` when 3 or more enemies die at once.
 - **Katana cut plane** = blade direction × swing direction. Each body part goes whole to one side, so the cut always falls between parts (neck, waist, hips, shoulders, knees); the glowing face is placed where that half's parts end. Very vertical cuts get a tall face down the body. If faces float away from the halves, tune `EnemyBody.CrossSection` or switch the cut off (`shatter.katanaCutsInHalf`).
 - **Door spawns** use `MRUKRoom.Anchors` with the `DOOR_FRAME` label. Both sides of each frame are tried and only a side inside a scanned room, on your floor, at the allowed distance and connected by the NavMesh is used, so the frame's facing direction doesn't matter. Without door frames in the scan, spawns fall back to random floor spots.
 - **Audio mixer:** Unity has no public API to build an AudioMixer, so **Stopklatka → 5. Create Audio Mixer** (also run by Build Game) calls the editor's internal `AudioMixerController` by reflection, the same steps as Unity's Audio Mixer window (checked against the 6000.0.85 editor DLL). It makes `Resources/Audio/StopklatkaMixer.mixer` with groups World, UI and Ambient under Master and exposes `WorldPitch` (World pitch, 1.0 = 100%) and `AmbientVolume` (Ambient volume, dB). If it fails, the log says why and prints these manual steps; the game meanwhile sets the pitch per sound:

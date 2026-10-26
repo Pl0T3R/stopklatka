@@ -57,6 +57,7 @@ namespace Stopklatka
         static readonly GunKind?[] EnemyWeapons = { GunKind.Pistol, GunKind.Smg, GunKind.Shotgun, null };
         static readonly string[] EnemyWeaponNames = { "PISTOLET", "PISTOLET MASZYNOWY", "STRZELBA", "BEZ BRONI" };
         bool _ready, _enemyUp;
+        int _readoutStamp = -1;
 
         void Awake()
         {
@@ -79,6 +80,8 @@ namespace Stopklatka
             PlayerHealth.Instance.Hit += OnHit;
             TimeController.Instance.SetMode(TimeController.Mode.Normal);
             Shatter.Prewarm();
+            Factory.PrewarmPools();
+            StartCoroutine(PipelineWarmup.Run());
             Hud.Instance.Title("TEST CZASU", 0f, Color.white);
             Hud.Instance.Sub("Stań prosto i patrz przed siebie.\nPotrzebujesz kilku metrów wolnego miejsca.", 0f);
             // give tracking a moment, so "in front of you" really is in front of you
@@ -96,9 +99,20 @@ namespace Stopklatka
         {
             var perf = PerformanceManager.Instance;
             var time = TimeController.Instance;
+            // the readout text is rebuilt only when the performance text changes (twice a second), not every frame
             if (perf != null && perf.ShowReadout && time != null)
-                Hud.Instance.Perf($"{perf.Readout()}\nruch {time.Motion:F2}  cel x{time.Target:F2}\ntrafienia {_hits}  strzały {_shots}  rzuty X {_lobs}  zabici {_kills}");
-            else Hud.Instance.Perf("");
+            {
+                if (perf.ReadoutStamp != _readoutStamp)
+                {
+                    _readoutStamp = perf.ReadoutStamp;
+                    Hud.Instance.Perf($"{perf.Readout()}\nruch {time.Motion:F2}  cel x{time.Target:F2}\ntrafienia {_hits}  strzały {_shots}  rzuty X {_lobs}  zabici {_kills}");
+                }
+            }
+            else
+            {
+                Hud.Instance.Perf("");
+                _readoutStamp = -1;
+            }
 
             if (!_ready) return;
             if (OVRInput.GetDown(OVRInput.Button.Start, OVRInput.Controller.LTouch))
@@ -180,7 +194,7 @@ namespace Stopklatka
             ShardSystem.ClearAll();
             Effects.ClearAll();
             foreach (var g in new List<Grabbable>(Grabbable.All))
-                if (g.Holder == null && g.EnemyOwner == null) Destroy(g.gameObject);
+                if (g.Holder == null && g.EnemyOwner == null) Factory.Recycle(g);
         }
 
         void BuildTurret(Vector3 floorPoint)
@@ -307,7 +321,7 @@ namespace Stopklatka
             {
                 var old = _lobbed[0];
                 _lobbed.RemoveAt(0);
-                if (old != null && old.Holder == null) Destroy(old.gameObject);
+                if (old != null && old.Holder == null && old.EnemyOwner == null) Factory.Recycle(old);
             }
         }
 
